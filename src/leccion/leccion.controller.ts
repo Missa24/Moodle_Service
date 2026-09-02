@@ -23,6 +23,7 @@ import { MarcarCompletadaDto } from 'src/leccion/dto/responder-formulario.dto';
 
 import { PermissionGuard } from 'src/common/guards/permission.guard';
 import { Permission } from 'src/common/decorator/decorator';
+import { Public } from 'src/auth/decorators/public.decorator';
 
 @Controller('lecciones')
 export class LeccionController {
@@ -35,9 +36,8 @@ export class LeccionController {
     return this.leccionService.create(dto);
   }
 
+  @Public()
   @Get('modulo/:moduloId')
-  @UseGuards(JwtAuthGuard, PermissionGuard)
-  @Permission('lecciones.ver')
   findByModulo(
     @Param('moduloId') moduloId: string,
     @Query() query: QueryLeccionDto,

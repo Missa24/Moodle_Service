@@ -20,6 +20,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { PermissionGuard } from 'src/common/guards/permission.guard';
 import { Permission } from 'src/common/decorator/decorator';
+import { Public } from 'src/auth/decorators/public.decorator';
 
 @Controller('modulos')
 export class ModuloController {
@@ -43,9 +44,8 @@ export class ModuloController {
     return this.moduloService.findAll(query);
   }
 
+  @Public()
   @Get('curso/:cursoId')
-  @UseGuards(JwtAuthGuard, PermissionGuard)
-  @Permission('modulos.ver')
   findByCurso(
     @Param('cursoId') cursoId: string,
     @Query() query: QueryModuloCursoDto,
@@ -53,16 +53,14 @@ export class ModuloController {
     return this.moduloService.findByCurso(cursoId, query);
   }
 
+  @Public()
   @Get(':id')
-  @UseGuards(JwtAuthGuard, PermissionGuard)
-  @Permission('modulos.ver')
   findOne(@Param('id') id: string) {
     return this.moduloService.findOne(id);
   }
 
+  @Public()
   @Get(':id/lecciones')
-  @UseGuards(JwtAuthGuard, PermissionGuard)
-  @Permission('modulos.ver')
   findLecciones(@Param('id') id: string) {
     return this.moduloService.findLecciones(id);
   }
