@@ -95,11 +95,13 @@ export abstract class InscripcionesRepository {
 
   abstract findByEstudianteId(estudianteId: string): Promise<Inscripcion[]>;
 
-  // metodo crear inscripcion con varios estudianteId
+  // metodo crear inscripcion con varios pares estudiante-modulo
   abstract createMultiple(data: {
-    moduloId: string;
-    estudianteIds: string[];
-    numeroInscripciones: string[];
+    inscripciones: {
+      estudianteId: string;
+      moduloId: string;
+      numeroInscripcion: string;
+    }[];
   }): Promise<unknown>;
 
   // metodo obtener inscripciones de un estudiante por estudianteId
