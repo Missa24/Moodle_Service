@@ -16,6 +16,7 @@ import { CertificadoService } from './certificado.service';
 import type { Response } from 'express';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import type { AuthenticatedRequest } from 'src/common/types/authenticated-user';
+import { Public } from 'src/auth/decorators/public.decorator';
 
 @Controller('certificados')
 export class CertificadosController {
@@ -42,6 +43,7 @@ export class CertificadosController {
     return this.certificadoService.buscarPorUsuario(usuarioId);
   }
 
+  @Public()
   @Get('verificar/:codigo')
   async buscarPorCodigo(@Param('codigo') codigo: string) {
     return this.certificadoService.verificarPorCodigo(codigo);
