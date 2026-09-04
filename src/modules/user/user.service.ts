@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateMiPerfilDto, UpdateUsuarioDto } from './dto/update-user.dto';
@@ -657,30 +657,64 @@ export class UserService {
     });
   }
 
-  async cambiarMiPassword(usuarioId: string, dto: CambiarMiPasswordDto) {
-    const usuario = await this.prisma.usuario.findUnique({
-      where: { id: usuarioId },
-      select: { id: true, contrasenaHash: true },
-    });
+  async cambiarMiPassword(
+    usuarioId: string,
+    dto: CambiarMiPasswordDto,
+  ) {
+    const usuario =
+      await this.prisma.usuario.findUnique({
+        where: {
+          id: usuarioId,
+        },
+        select: {
+          id: true,
+          contrasenaHash: true,
+        },
+      });
 
     if (!usuario) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new NotFoundException(
+        "Usuario no encontrado",
+      );
     }
 
-    const coincide = await bcrypt.compare(dto.passwordActual, usuario.contrasenaHash);
+    if (!usuario.contrasenaHash) {
+      throw new BadRequestException(
+        "Tu cuenta utiliza inicio de sesión con Google y todavía no tiene una contraseña local.",
+      );
+    }
+
+    const coincide =
+      await bcrypt.compare(
+        dto.passwordActual,
+        usuario.contrasenaHash,
+      );
 
     if (!coincide) {
-      throw new UnauthorizedException('La contraseña actual no es correcta');
+      throw new UnauthorizedException(
+        "La contraseña actual no es correcta",
+      );
     }
 
-    const nuevoHash = await this.hashPassword(dto.passwordNueva);
+    const nuevoHash =
+      await this.hashPassword(
+        dto.passwordNueva,
+      );
 
     await this.prisma.usuario.update({
-      where: { id: usuarioId },
-      data: { contrasenaHash: nuevoHash },
+      where: {
+        id: usuarioId,
+      },
+      data: {
+        contrasenaHash:
+          nuevoHash,
+      },
     });
 
-    return { mensaje: 'Contraseña actualizada correctamente' };
+    return {
+      mensaje:
+        "Contraseña actualizada correctamente",
+    };
   }
 
   async changePasswordUser(id: string, dto: ChangePasswordUserDto) {
