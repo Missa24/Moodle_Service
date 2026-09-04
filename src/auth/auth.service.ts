@@ -384,68 +384,59 @@ export class AuthService {
     private async generarRespuestaAuth(
         usuario: UsuarioAuth,
     ) {
-        const nombresRoles =
-            usuario.roles.map(
-                (item) =>
-                    item.rol.nombre,
-            );
+        const nombresRoles = usuario.roles.map(
+            (item) => item.rol.nombre,
+        );
 
-        const permisos =
-            usuario.roles.flatMap(
-                (item) =>
-                    item.rol.permisos.map(
-                        (rolPermiso) =>
-                            rolPermiso
-                                .permiso
-                                .nombre,
-                    ),
-            );
+        const permisos = usuario.roles.flatMap(
+            (item) =>
+                item.rol.permisos.map(
+                    (rolPermiso) =>
+                        rolPermiso.permiso.nombre,
+                ),
+        );
 
-        const rolIds =
-            usuario.roles.map(
-                (item) =>
-                    item.rolId,
-            );
+        const rolIds = usuario.roles.map(
+            (item) => item.rolId,
+        );
 
         const menus =
             await this.menusService.obtenerMenusPorRoles(
                 rolIds,
             );
 
+        const requiereCompletarPerfil =
+            !usuario.perfil?.nombre ||
+            !usuario.perfil?.telefono ||
+            !usuario.perfil?.paisCodigo;
+
         const payload = {
             sub: usuario.id,
-            username:
-                usuario.username,
+            username: usuario.username,
         };
 
         const access_token =
             await this.jwtService.signAsync(
                 payload,
                 {
-                    expiresIn:
-                        "1h",
+                    expiresIn: "1h",
                 },
             );
 
         return {
             access_token,
             usuario: {
-                id:
-                    usuario.id,
-                username:
-                    usuario.username,
-                correo:
-                    usuario.correo,
-                estado:
-                    usuario.estado,
-                rol:
-                    nombresRoles,
+                id: usuario.id,
+                username: usuario.username,
+                correo: usuario.correo,
+                estado: usuario.estado,
+                rol: nombresRoles,
                 permisos,
                 menus,
+                requiereCompletarPerfil,
             },
         };
     }
-
     private async generarUsername(
         correo: string,
     ) {

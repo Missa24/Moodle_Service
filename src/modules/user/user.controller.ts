@@ -9,6 +9,8 @@ import {
   UseGuards,
   Query,
   Request,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -25,6 +27,7 @@ import {
   ChangePasswordUserDto,
 } from './dto/change-password';
 import type { AuthenticatedRequest } from 'src/common/types/authenticated-user';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @Controller('user')
 export class UserController {
@@ -71,10 +74,7 @@ export class UserController {
     @Query('page') page = '1',
     @Query('limit') limit = '10',
   ) {
-    return this.userService.ObtenerTodosPaginado(
-      Number(page),
-      Number(limit),
-    );
+    return this.userService.ObtenerTodosPaginado(Number(page), Number(limit),);
   }
 
   @Get(':id')
@@ -90,10 +90,14 @@ export class UserController {
     @Request() req: AuthenticatedRequest,
     @Body() data: UpdateMiPerfilDto,
   ) {
-    return this.userService.actualizarMiPerfil(
-      req.user.id,
-      data,
-    );
+    return this.userService.actualizarMiPerfil(req.user.id, data,);
+  }
+
+  @Patch('mi-perfil/foto')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('file'))
+  actualizarFotoPerfil(@Request() req: AuthenticatedRequest, @UploadedFile() file?: Express.Multer.File) {
+    return this.userService.actualizarFotoPerfil(req.user.id, file,);
   }
 
   @Patch('mi-password')
@@ -102,10 +106,7 @@ export class UserController {
     @Request() req: AuthenticatedRequest,
     @Body() dto: CambiarMiPasswordDto,
   ) {
-    return this.userService.cambiarMiPassword(
-      req.user.id,
-      dto,
-    );
+    return this.userService.cambiarMiPassword(req.user.id, dto,);
   }
 
   @Patch('password/:id')

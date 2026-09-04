@@ -4,6 +4,7 @@ import {
     IsNotEmpty,
     IsOptional,
     IsString,
+    Length,
 } from "class-validator";
 
 export class UpdateUsuarioDto {
@@ -149,4 +150,9 @@ export class UpdateMiPerfilDto {
     @IsOptional()
     @IsString()
     contactoEmergenciaTelefono?: string;
+
+    @IsOptional()
+    @IsString()
+    @Length(2, 2)
+    paisCodigo?: string;
 }
