@@ -6,11 +6,15 @@ datasource db {
   provider = "postgresql"
 }
 
+enum ProveedorOAuth {
+  GOOGLE
+}
+
 model Usuario {
   id                 String           @id @default(cuid())
   username           String           @unique
   correo             String           @unique
-  contrasenaHash     String
+  contrasenaHash     String?
   estado             String           @default("activo")
   correoVerificadoEn DateTime?
   ultimoAccesoEn     DateTime?
@@ -21,6 +25,7 @@ model Usuario {
   notificaciones     Notificaciones[]
   perfil             Perfil?
   progresosCursos    ProgresoCurso[]
+  cuentasOAuth       CuentaOAuth[]
   roles              UsuarioRol[]
 
   @@map("usuarios")
@@ -39,6 +44,7 @@ model Perfil {
   genero                     String?
   ciudad                     String?
   pais                       String?
+  paisCodigo                 String?   @db.Char(2)
   ocupacion                  String?
   contactoEmergenciaNombre   String?
   contactoEmergenciaTelefono String?
@@ -48,6 +54,23 @@ model Perfil {
   usuario                    Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
   @@map("perfiles")
+}
+
+model CuentaOAuth {
+  id                 String         @id @default(cuid())
+  usuarioId          String
+  proveedor          ProveedorOAuth
+  proveedorUsuarioId String
+  correoProveedor    String?
+  creadoEn           DateTime       @default(now())
+  actualizadoEn      DateTime       @updatedAt
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([proveedor, proveedorUsuarioId])
+  @@unique([usuarioId, proveedor])
+  @@index([usuarioId])
+  @@map("cuentas_oauth")
 }
 
 model Rol {

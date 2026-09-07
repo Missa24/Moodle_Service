@@ -1,15 +1,19 @@
-import { ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateMiPerfilDto, UpdateUsuarioDto } from './dto/update-user.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { CambiarMiPasswordDto, ChangePasswordUserDto } from './dto/change-password';
+import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 
 @Injectable()
 export class UserService {
 
-  constructor(private readonly prisma: PrismaService) { };
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cloudinaryService: CloudinaryService
+  ) { };
 
   private async generateUsername(
     nombre: string,
@@ -335,6 +339,7 @@ export class UserService {
         correo,
       },
       include: {
+        perfil: true,
         roles: {
           include: {
             rol: {
@@ -611,14 +616,27 @@ export class UserService {
           ...(data.numeroDocumento !== undefined && {
             numeroDocumento: data.numeroDocumento,
           }),
-          ...(data.telefono !== undefined && { telefono: data.telefono }),
+          ...(data.telefono !== undefined && {
+            telefono: data.telefono,
+          }),
           ...(fechaNacimientoValida !== undefined && {
             fechaNacimiento: fechaNacimientoValida,
           }),
-          ...(data.genero !== undefined && { genero: data.genero }),
-          ...(data.ciudad !== undefined && { ciudad: data.ciudad }),
-          ...(data.pais !== undefined && { pais: data.pais }),
-          ...(data.ocupacion !== undefined && { ocupacion: data.ocupacion }),
+          ...(data.genero !== undefined && {
+            genero: data.genero,
+          }),
+          ...(data.ciudad !== undefined && {
+            ciudad: data.ciudad,
+          }),
+          ...(data.pais !== undefined && {
+            pais: data.pais,
+          }),
+          ...(data.paisCodigo !== undefined && {
+            paisCodigo: data.paisCodigo.trim().toUpperCase(),
+          }),
+          ...(data.ocupacion !== undefined && {
+            ocupacion: data.ocupacion,
+          }),
           ...(data.contactoEmergenciaNombre !== undefined && {
             contactoEmergenciaNombre: data.contactoEmergenciaNombre,
           }),
@@ -628,7 +646,7 @@ export class UserService {
         },
         create: {
           usuarioId,
-          nombre: data.nombre ?? '',
+          nombre: data.nombre ?? "",
           apellidoPaterno: data.apellidoPaterno,
           apellidoMaterno: data.apellidoMaterno,
           tipoDocumentoIdentidad: data.tipoDocumentoIdentidad,
@@ -638,6 +656,7 @@ export class UserService {
           genero: data.genero,
           ciudad: data.ciudad,
           pais: data.pais,
+          paisCodigo: data.paisCodigo?.trim().toUpperCase(),
           ocupacion: data.ocupacion,
           contactoEmergenciaNombre: data.contactoEmergenciaNombre,
           contactoEmergenciaTelefono: data.contactoEmergenciaTelefono,
@@ -657,30 +676,64 @@ export class UserService {
     });
   }
 
-  async cambiarMiPassword(usuarioId: string, dto: CambiarMiPasswordDto) {
-    const usuario = await this.prisma.usuario.findUnique({
-      where: { id: usuarioId },
-      select: { id: true, contrasenaHash: true },
-    });
+  async cambiarMiPassword(
+    usuarioId: string,
+    dto: CambiarMiPasswordDto,
+  ) {
+    const usuario =
+      await this.prisma.usuario.findUnique({
+        where: {
+          id: usuarioId,
+        },
+        select: {
+          id: true,
+          contrasenaHash: true,
+        },
+      });
 
     if (!usuario) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new NotFoundException(
+        "Usuario no encontrado",
+      );
     }
 
-    const coincide = await bcrypt.compare(dto.passwordActual, usuario.contrasenaHash);
+    if (!usuario.contrasenaHash) {
+      throw new BadRequestException(
+        "Tu cuenta utiliza inicio de sesión con Google y todavía no tiene una contraseña local.",
+      );
+    }
+
+    const coincide =
+      await bcrypt.compare(
+        dto.passwordActual,
+        usuario.contrasenaHash,
+      );
 
     if (!coincide) {
-      throw new UnauthorizedException('La contraseña actual no es correcta');
+      throw new UnauthorizedException(
+        "La contraseña actual no es correcta",
+      );
     }
 
-    const nuevoHash = await this.hashPassword(dto.passwordNueva);
+    const nuevoHash =
+      await this.hashPassword(
+        dto.passwordNueva,
+      );
 
     await this.prisma.usuario.update({
-      where: { id: usuarioId },
-      data: { contrasenaHash: nuevoHash },
+      where: {
+        id: usuarioId,
+      },
+      data: {
+        contrasenaHash:
+          nuevoHash,
+      },
     });
 
-    return { mensaje: 'Contraseña actualizada correctamente' };
+    return {
+      mensaje:
+        "Contraseña actualizada correctamente",
+    };
   }
 
   async changePasswordUser(id: string, dto: ChangePasswordUserDto) {
@@ -701,6 +754,45 @@ export class UserService {
     });
 
     return { mensaje: 'Contraseña actualizada correctamente ' + usuario.username };
+  }
+
+  async actualizarFotoPerfil(
+    usuarioId: string,
+    file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException(
+        'Debe seleccionar una imagen',
+      );
+    }
+
+    const imagen =
+      await this.cloudinaryService.uploadImage(
+        file,
+        'elite/perfiles',
+      );
+
+    const perfil =
+      await this.prisma.perfil.upsert({
+        where: {
+          usuarioId,
+        },
+        update: {
+          fotografiaRuta: imagen.url,
+        },
+        create: {
+          usuarioId,
+          nombre: '',
+          fotografiaRuta: imagen.url,
+        },
+      });
+
+    return {
+      success: true,
+      message:
+        'Foto de perfil actualizada correctamente',
+      data: perfil,
+    };
   }
 }
 
