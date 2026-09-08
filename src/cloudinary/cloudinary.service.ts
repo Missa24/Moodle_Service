@@ -12,7 +12,10 @@ export class CloudinaryService {
     });
   }
 
-  async uploadImage(file: Express.Multer.File, folder: string,): Promise<{ url: string; publicId: string; }> {
+  async uploadImage(file: Express.Multer.File, folder: string,): Promise<{
+    url: string;
+    publicId: string;
+  }> {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
@@ -36,7 +39,10 @@ export class CloudinaryService {
     });
   }
 
-  async uploadFile(file: Express.Multer.File, folder: string,): Promise<{
+  async uploadFile(
+    file: Express.Multer.File,
+    folder: string,
+  ): Promise<{
     url: string;
     publicId: string;
     resourceType: string;
@@ -67,5 +73,33 @@ export class CloudinaryService {
 
       Readable.from(file.buffer).pipe(uploadStream);
     });
+  }
+
+  generarUrlPrivada(publicId: string): string {
+    return cloudinary.url(publicId, {
+      resource_type: 'image',
+      type: 'authenticated',
+      sign_url: true,
+      secure: true,
+    });
+  }
+
+  generarFirma(folder: string) {
+    const timestamp = Math.floor(Date.now() / 1000);
+
+    const signature = cloudinary.utils.api_sign_request({
+      timestamp,
+      folder,
+    },
+      process.env.CLOUDINARY_API_SECRET!,
+    );
+
+    return {
+      timestamp,
+      signature,
+      folder,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+    };
   }
 }

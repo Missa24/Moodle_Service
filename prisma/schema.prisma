@@ -27,6 +27,7 @@ model Usuario {
   progresosCursos    ProgresoCurso[]
   cuentasOAuth       CuentaOAuth[]
   roles              UsuarioRol[]
+  leads Lead[]
 
   @@map("usuarios")
 }
@@ -221,8 +222,24 @@ model Modulo {
   lecciones           Leccion[]
   curso               Curso                     @relation(fields: [cursoId], references: [id], onDelete: Cascade)
   reglaCertificacion  ReglaCertificacionModulo?
-
+  
+  precios             Precio[]
+  leads Lead[]
+  
   @@map("modulos")
+}
+
+model Precio {
+  id            String   @id @default(cuid())
+  moduloId      String
+  costo         Decimal  @db.Decimal(10, 2)
+  creadoEn      DateTime @default(now())
+
+  modulo        Modulo   @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+
+  @@index([moduloId, creadoEn])
+
+  @@map("precios")
 }
 
 model Leccion {
@@ -276,6 +293,7 @@ model Inscripcion {
   fechaFinalizacion  DateTime?
   observaciones      String?
   inscritoPor        String?
+  monto Float @default(0)
   creadoEn           DateTime          @default(now())
   actualizadoEn      DateTime          @updatedAt
   certificado        Certificado?
@@ -285,6 +303,19 @@ model Inscripcion {
   progresoModulo     ProgresoModulo?
 
   @@map("inscripciones")
+}
+
+model Lead {
+  id        String @id @default(cuid())
+  usuarioId String
+  moduloId  String
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  modulo  Modulo  @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@index([moduloId])
+  @@map("leads")
 }
 
 model ProgresoLeccion {
