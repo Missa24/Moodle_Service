@@ -252,6 +252,7 @@ export class PrismaInscripcionesRepository
         fechaInscripcion: true,
         estado: true,
         estadoAcceso: true,
+        monto: true,
         porcentajeAvance: true,
         fechaFinalizacion: true,
         observaciones: true,
