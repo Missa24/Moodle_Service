@@ -304,16 +304,33 @@ model Inscripcion {
   @@map("inscripciones")
 }
 
+enum EstadoLead {
+  INTERESADO
+  PAGO_INICIADO
+  CONVERTIDO
+  DESCARTADO
+}
+
 model Lead {
   id        String @id @default(cuid())
   usuarioId String
   moduloId  String
 
-  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  modulo  Modulo  @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+  estado EstadoLead @default(INTERESADO)
 
+  creadoEn        DateTime  @default(now())
+  actualizadoEn   DateTime  @updatedAt
+  ultimoIntentoEn DateTime  @default(now())
+  convertidoEn    DateTime?
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  modulo Modulo @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, moduloId])
   @@index([usuarioId])
   @@index([moduloId])
+  @@index([estado])
   @@map("leads")
 }
 

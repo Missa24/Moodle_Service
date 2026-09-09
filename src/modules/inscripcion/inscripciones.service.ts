@@ -334,4 +334,34 @@ export class InscripcionesService {
       ),
     }));
   }
+  async verificarMiInscripcion(
+    estudianteId: string,
+    moduloId: string,
+  ) {
+    const inscripcion =
+      await this.inscripcionesRepository.findByEstudianteAndModulo(
+        estudianteId,
+        moduloId,
+      );
+
+    if (!inscripcion) {
+      return {
+        inscrito: false,
+        tieneAcceso: false,
+        inscripcion: null,
+      };
+    }
+
+    const tieneAcceso =
+      inscripcion.estado === 'activa' &&
+      inscripcion.estadoAcceso === 'habilitado';
+
+    return {
+      inscrito: true,
+      tieneAcceso,
+      inscripcion,
+    };
+  }
+
+
 }

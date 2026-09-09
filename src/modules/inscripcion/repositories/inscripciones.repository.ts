@@ -111,4 +111,6 @@ export abstract class InscripcionesRepository {
 
   // metodo obtener inscripciones de un estudiante por estudianteId
   abstract findByEstudianteInscripciones(estudianteId: string): Promise<InscripcionConModuloCurso[]>;
+
+  abstract findByEstudianteAndModulo(estudianteId: string, moduloId: string,): Promise<Inscripcion | null>;
 }

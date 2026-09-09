@@ -23,6 +23,7 @@ import { CertificadosModule } from './modules/certificado/certificado.module';
 import { ProgresoModule } from './modules/progreso/progreso.module';
 import { CategoriaModule } from './modules/categoria/categoria.module';
 import { NotificacionesModule } from './modules/notificaciones/notificaciones.module';
+import { LeadModule } from './lead/lead.module';
 
 
 @Module({
@@ -45,6 +46,7 @@ import { NotificacionesModule } from './modules/notificaciones/notificaciones.mo
     ProgresoModule,
     CategoriaModule,
     NotificacionesModule,
+    LeadModule,
 
   ],
   controllers: [AppController],

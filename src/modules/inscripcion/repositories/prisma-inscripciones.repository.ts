@@ -235,4 +235,28 @@ export class PrismaInscripcionesRepository
       }
     });
   }
+  async findByEstudianteAndModulo(
+    estudianteId: string,
+    moduloId: string,
+  ) {
+    return this.prisma.inscripcion.findFirst({
+      where: {
+        estudianteId,
+        moduloId,
+      },
+      select: {
+        id: true,
+        moduloId: true,
+        estudianteId: true,
+        numeroInscripcion: true,
+        fechaInscripcion: true,
+        estado: true,
+        estadoAcceso: true,
+        porcentajeAvance: true,
+        fechaFinalizacion: true,
+        observaciones: true,
+        inscritoPor: true,
+      },
+    });
+  }
 }
