@@ -1,17 +1,31 @@
-import { IsNotEmpty, IsString } from "class-validator";
+import { IsOptional, IsNumber, IsString, Min } from "class-validator";
+import { Type } from "class-transformer";
 
 export class UpdateInscripcionDto {
-  // @IsNotEmpty()
-  // @IsString()
-  // moduloId!: string;
-
-  // @IsNotEmpty()
-  // @IsString()
-  // estudianteId!: string;
-
+  @IsOptional()
+  @IsString()
   estado?: string;
+
+  @IsOptional()
+  @IsString()
   estadoAcceso?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   porcentajeAvance?: number;
-  fechaFinalizacion?: Date;
+
+  @IsOptional()
+  @IsString()
+  fechaFinalizacion?: string;
+
+  @IsOptional()
+  @IsString()
   observaciones?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  monto?: number;
 }

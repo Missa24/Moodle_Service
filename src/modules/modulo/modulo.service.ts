@@ -6,11 +6,16 @@ import { UpdateModuloDto } from './dto/update-modulo.dto';
 import { QueryModuloDto } from './dto/query-modulo.dto';
 import { QueryModuloCursoDto } from './dto/query-modulo-curso.dto';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { PrecioService } from '../precio/precio.service';
 
 
 @Injectable()
 export class ModuloService {
-  constructor(private readonly prisma: PrismaService, private readonly cloudinaryService: CloudinaryService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cloudinaryService: CloudinaryService,
+    private readonly precioService: PrecioService,
+  ) { }
 
   async create(
     createModuloDto: CreateModuloDto,
@@ -35,12 +40,23 @@ export class ModuloService {
       rutaImagen = imagen.url;
     }
 
-    return this.prisma.modulo.create({
+    const { costo, ...moduloData } = createModuloDto;
+
+    const modulo = await this.prisma.modulo.create({
       data: {
-        ...createModuloDto,
+        ...moduloData,
         rutaImagen,
       },
     });
+
+    if (costo !== undefined && costo !== null) {
+      await this.precioService.create({
+        moduloId: modulo.id,
+        costo,
+      });
+    }
+
+    return modulo;
   }
 
   async findAll(query: QueryModuloDto) {
@@ -115,6 +131,10 @@ export class ModuloService {
       include: {
         curso: { select: { id: true, nombre: true, categoria: true } },
         _count: { select: { lecciones: true, inscripciones: true } },
+        precios: {
+          orderBy: { creadoEn: 'desc' },
+          take: 1,
+        },
       },
     });
 
@@ -122,7 +142,13 @@ export class ModuloService {
       throw new NotFoundException('Módulo no encontrado');
     }
 
-    return modulo;
+    const { precios, ...rest } = modulo;
+    const precioActual = precios[0] ?? null;
+
+    return {
+      ...rest,
+      costo: precioActual ? Number(precioActual.costo) : null,
+    };
   }
 
   async findLecciones(id: string) {
@@ -152,16 +178,27 @@ export class ModuloService {
       rutaImagen = imagen.url;
     }
 
-    return this.prisma.modulo.update({
+    const { costo, ...moduloData } = updateModuloDto;
+
+    const modulo = await this.prisma.modulo.update({
       where: { id },
       data: {
-        ...updateModuloDto,
+        ...moduloData,
 
         ...(rutaImagen && {
           rutaImagen,
         }),
       },
     });
+
+    if (costo !== undefined && costo !== null) {
+      await this.precioService.create({
+        moduloId: id,
+        costo,
+      });
+    }
+
+    return modulo;
   }
 
   async remove(id: string) {

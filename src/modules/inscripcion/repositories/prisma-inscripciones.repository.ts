@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { InscripcionesRepository } from 'src/modules/inscripcion/repositories/inscripciones.repository';
 
@@ -91,13 +92,14 @@ export class PrismaInscripcionesRepository
     moduloId: string;
     estudianteId: string;
     numeroInscripcion: string;
+    monto?: number;
   }) {
     return this.prisma.inscripcion.create({
       data,
     });
   }
 
-  async update(id: string, inscripcion: any) {
+  async update(id: string, inscripcion: Prisma.InscripcionUpdateInput) {
     return this.prisma.inscripcion.update({
       where: { id },
       data: inscripcion,
@@ -145,6 +147,7 @@ export class PrismaInscripcionesRepository
             id: true,
             numeroInscripcion: true,
             estadoAcceso: true,
+            monto: true,
             modulo: {
               select: {
                 id: true,
@@ -185,6 +188,7 @@ export class PrismaInscripcionesRepository
       estudianteId: string;
       moduloId: string;
       numeroInscripcion: string;
+      monto?: number;
     }[];
   }) {
     return this.prisma.inscripcion.createMany({
