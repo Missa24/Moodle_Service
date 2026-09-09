@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsBoolean,
   IsInt,
+  IsNumber,
   Min,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
@@ -26,10 +27,6 @@ export class CreateModuloDto {
   fraseMotivacional?: string;
 
   @IsOptional()
-  @IsString()
-  rutaImagen?: string;
-
-  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
@@ -44,4 +41,10 @@ export class CreateModuloDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   estaPublicado?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  costo?: number;
 }

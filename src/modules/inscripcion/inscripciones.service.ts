@@ -14,6 +14,7 @@ type Inscripcion = {
   fechaInscripcion: Date;
   estado: string;
   estadoAcceso: string;
+  monto: number;
   porcentajeAvance: number;
   fechaFinalizacion: Date | null;
   observaciones: string | null;
@@ -26,6 +27,7 @@ type ModuloAgrupado = {
   orden: number;
   estadoAcceso: string;
   numeroInscripcion?: string;
+  monto?: number;
 };
 
 type ModuloAgrupadoConDetalles = {
@@ -103,6 +105,7 @@ export class InscripcionesService {
     return this.inscripcionesRepository.create({
       ...data,
       numeroInscripcion,
+      monto: modulo.costo ?? 0,
     });
   }
 
@@ -200,6 +203,7 @@ export class InscripcionesService {
           orden: inscripcion.modulo.orden,
           numeroInscripcion: inscripcion.numeroInscripcion,
           estadoAcceso: inscripcion.estadoAcceso,
+          monto: inscripcion.monto,
         });
       }
 
@@ -241,6 +245,13 @@ export class InscripcionesService {
     if (!modulos || modulos.some(modulo => !modulo)) throw new NotFoundException('Módulo no encontrado');
     const estudiantesExistentes = estudiantes.filter(estudiante => estudiante !== null);
 
+    const costosPorModulo = new Map<string, number>();
+    for (const modulo of modulos) {
+      if (modulo) {
+        costosPorModulo.set(modulo.id, modulo.costo ?? 0);
+      }
+    }
+
     // buscar inscripciones existentes para todos los estudiantes
     const inscripcionesExistentes = await Promise.all(
       estudiantesExistentes.map(estudiante => this.inscripcionesRepository.findByEstudianteId(estudiante.id))
@@ -252,7 +263,7 @@ export class InscripcionesService {
     );
 
     // generar pares estudiante-modulo que no existen
-    const inscripcionesNuevas: { estudianteId: string; moduloId: string; numeroInscripcion: string }[] = [];
+    const inscripcionesNuevas: { estudianteId: string; moduloId: string; numeroInscripcion: string; monto: number }[] = [];
     for (const estudiante of estudiantesExistentes) {
       for (const moduloId of data.moduloIds) {
         const par = `${estudiante.id}-${moduloId}`;
@@ -261,6 +272,7 @@ export class InscripcionesService {
             estudianteId: estudiante.id,
             moduloId,
             numeroInscripcion: this.generarNumeroInscripcion(),
+            monto: costosPorModulo.get(moduloId) ?? 0,
           });
         }
       }
@@ -306,6 +318,7 @@ export class InscripcionesService {
           fechaInscripcion: inscripcion.fechaInscripcion,
           estado: inscripcion.estado,
           estadoAcceso: inscripcion.estadoAcceso,
+          monto: inscripcion.monto,
           porcentajeAvance: inscripcion.porcentajeAvance,
           fechaFinalizacion: inscripcion.fechaFinalizacion,
           observaciones: inscripcion.observaciones,

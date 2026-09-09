@@ -6,6 +6,7 @@ type Inscripcion = {
   fechaInscripcion: Date;
   estado: string;
   estadoAcceso: string;
+  monto: number;
   porcentajeAvance: number;
   fechaFinalizacion: Date | null;
   observaciones: string | null;
@@ -27,6 +28,7 @@ type EstudianteConInscripciones = {
     id: string;
     numeroInscripcion: string;
     estadoAcceso: string;
+    monto: number;
 
     modulo: {
       id: string;
@@ -53,6 +55,7 @@ type InscripcionConModuloCurso = {
   fechaFinalizacion: Date | null;
   estado: string;
   estadoAcceso: string;
+  monto: number;
   porcentajeAvance: number;
   observaciones: string | null;
   inscritoPor: string | null;
@@ -83,7 +86,8 @@ export abstract class InscripcionesRepository {
     moduloId: string;
     estudianteId: string;
     numeroInscripcion: string;
-  }): Promise<unknown>;
+    monto?: number;
+  }): Promise<Inscripcion>;
 
   abstract update(id: string, data: unknown): Promise<unknown>;
 
@@ -101,6 +105,7 @@ export abstract class InscripcionesRepository {
       estudianteId: string;
       moduloId: string;
       numeroInscripcion: string;
+      monto?: number;
     }[];
   }): Promise<unknown>;
 

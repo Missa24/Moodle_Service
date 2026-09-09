@@ -48,6 +48,7 @@ export async function seedInscripciones(prisma: PrismaClient) {
           estado: 'activa',
           estadoAcceso: 'habilitado',
           porcentajeAvance: 0,
+          monto: 0,
           inscritoPor: null,
           observaciones: null,
         },
