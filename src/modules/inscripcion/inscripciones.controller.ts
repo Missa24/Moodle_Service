@@ -63,7 +63,6 @@ export class InscripcionesController {
 
   @Get('estudiante/:estudianteId')
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @Permission('inscripciones.ver')
   findByEstudianteInscripciones(
     @Param('estudianteId') estudianteId: string,
   ) {

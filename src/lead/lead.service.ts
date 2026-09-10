@@ -4,25 +4,26 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { PrismaService } from '../prisma/prisma.service';
 import { EstadoLead } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { InscripcionesService } from 'src/modules/inscripcion/inscripciones.service';
 
 @Injectable()
 export class LeadService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly inscripcionesService: InscripcionesService,
   ) { }
 
   async create(
     usuarioId: string,
     moduloId: string,
   ) {
-    const modulo =
-      await this.prisma.modulo.findUnique({
-        where: {
-          id: moduloId,
-        },
-      });
+    const modulo = await this.prisma.modulo.findUnique({
+      where: {
+        id: moduloId,
+      },
+    });
 
     if (!modulo) {
       throw new BadRequestException(
@@ -30,15 +31,14 @@ export class LeadService {
       );
     }
 
-    const leadExistente =
-      await this.prisma.lead.findUnique({
-        where: {
-          usuarioId_moduloId: {
-            usuarioId,
-            moduloId,
-          },
+    const leadExistente = await this.prisma.lead.findUnique({
+      where: {
+        usuarioId_moduloId: {
+          usuarioId,
+          moduloId,
         },
-      });
+      },
+    });
 
     if (leadExistente) {
       await this.prisma.lead.update({
@@ -81,8 +81,7 @@ export class LeadService {
     const skip =
       (currentPage - 1) * currentLimit;
 
-    const search =
-      q.trim();
+    const search = q.trim();
 
     const where = search
       ? {
@@ -157,13 +156,9 @@ export class LeadService {
       }
       : {};
 
-    const [
-      leads,
-      total,
-    ] = await Promise.all([
+    const [leads, total] = await Promise.all([
       this.prisma.lead.findMany({
         where,
-
         skip,
         take: currentLimit,
 
@@ -219,68 +214,67 @@ export class LeadService {
       }),
     ]);
 
-    const data =
-      leads.map((lead) => ({
-        id: lead.id,
+    const data = leads.map((lead) => ({
+      id: lead.id,
 
-        usuarioId:
-          lead.usuario.id,
+      usuarioId:
+        lead.usuario.id,
+
+      nombre:
+        lead.usuario.perfil?.nombre ?? '',
+
+      apellidoPaterno:
+        lead.usuario.perfil?.apellidoPaterno ?? '',
+
+      apellidoMaterno:
+        lead.usuario.perfil?.apellidoMaterno ?? '',
+
+      correo:
+        lead.usuario.correo,
+
+      telefono:
+        lead.usuario.perfil?.telefono ?? '',
+
+      ciudad:
+        lead.usuario.perfil?.ciudad ?? '',
+
+      pais:
+        lead.usuario.perfil?.pais ?? '',
+
+      paisCodigo:
+        lead.usuario.perfil?.paisCodigo ?? '',
+
+      curso: {
+        id:
+          lead.modulo.curso.id,
 
         nombre:
-          lead.usuario.perfil?.nombre ?? '',
+          lead.modulo.curso.nombre,
+      },
 
-        apellidoPaterno:
-          lead.usuario.perfil?.apellidoPaterno ?? '',
+      modulo: {
+        id:
+          lead.modulo.id,
 
-        apellidoMaterno:
-          lead.usuario.perfil?.apellidoMaterno ?? '',
+        nombre:
+          lead.modulo.nombre,
+      },
 
-        correo:
-          lead.usuario.correo,
+      estado:
+        lead.estado,
 
-        telefono:
-          lead.usuario.perfil?.telefono ?? '',
+      creadoEn:
+        lead.creadoEn,
 
-        ciudad:
-          lead.usuario.perfil?.ciudad ?? '',
+      actualizadoEn:
+        lead.actualizadoEn,
 
-        pais:
-          lead.usuario.perfil?.pais ?? '',
+      ultimoIntentoEn:
+        lead.ultimoIntentoEn,
 
-        paisCodigo:
-          lead.usuario.perfil?.paisCodigo ?? '',
-
-        curso: {
-          id:
-            lead.modulo.curso.id,
-
-          nombre:
-            lead.modulo.curso.nombre,
-        },
-
-        modulo: {
-          id:
-            lead.modulo.id,
-
-          nombre:
-            lead.modulo.nombre,
-        },
-
-        estado:
-          lead.estado,
-
-        creadoEn:
-          lead.creadoEn,
-
-        actualizadoEn:
-          lead.actualizadoEn,
-
-        ultimoIntentoEn:
-          lead.ultimoIntentoEn,
-
-        convertidoEn:
-          lead.convertidoEn,
-      }));
+      convertidoEn:
+        lead.convertidoEn,
+    }));
 
     return {
       data,
@@ -291,9 +285,7 @@ export class LeadService {
         total,
 
         totalPages:
-          Math.ceil(
-            total / currentLimit,
-          ),
+          Math.ceil(total / currentLimit),
       },
     };
   }
@@ -337,54 +329,53 @@ export class LeadService {
   async findById(
     id: string,
   ) {
-    const lead =
-      await this.prisma.lead.findUnique({
-        where: {
-          id,
-        },
+    const lead = await this.prisma.lead.findUnique({
+      where: {
+        id,
+      },
 
-        select: {
-          id: true,
-          estado: true,
-          creadoEn: true,
-          actualizadoEn: true,
-          ultimoIntentoEn: true,
-          convertidoEn: true,
+      select: {
+        id: true,
+        estado: true,
+        creadoEn: true,
+        actualizadoEn: true,
+        ultimoIntentoEn: true,
+        convertidoEn: true,
 
-          usuario: {
-            select: {
-              id: true,
-              correo: true,
+        usuario: {
+          select: {
+            id: true,
+            correo: true,
 
-              perfil: {
-                select: {
-                  nombre: true,
-                  apellidoPaterno: true,
-                  apellidoMaterno: true,
-                  telefono: true,
-                  ciudad: true,
-                  pais: true,
-                  paisCodigo: true,
-                },
-              },
-            },
-          },
-
-          modulo: {
-            select: {
-              id: true,
-              nombre: true,
-
-              curso: {
-                select: {
-                  id: true,
-                  nombre: true,
-                },
+            perfil: {
+              select: {
+                nombre: true,
+                apellidoPaterno: true,
+                apellidoMaterno: true,
+                telefono: true,
+                ciudad: true,
+                pais: true,
+                paisCodigo: true,
               },
             },
           },
         },
-      });
+
+        modulo: {
+          select: {
+            id: true,
+            nombre: true,
+
+            curso: {
+              select: {
+                id: true,
+                nombre: true,
+              },
+            },
+          },
+        },
+      },
+    });
 
     if (!lead) {
       throw new NotFoundException(
@@ -399,20 +390,46 @@ export class LeadService {
     id: string,
     estado: EstadoLead,
   ) {
-    const lead =
-      await this.prisma.lead.findUnique({
-        where: {
-          id,
-        },
-        select: {
-          id: true,
-        },
-      });
+    const lead = await this.prisma.lead.findUnique({
+      where: {
+        id,
+      },
+
+      select: {
+        id: true,
+        usuarioId: true,
+        moduloId: true,
+        estado: true,
+      },
+    });
 
     if (!lead) {
       throw new NotFoundException(
         'Lead no encontrado',
       );
+    }
+
+    /*
+     * Cuando administración confirma que el pago
+     * fue completado, creamos la inscripción.
+     */
+    if (estado === EstadoLead.PAGO_COMPLETADO) {
+      const estadoInscripcion =
+        await this.inscripcionesService.verificarMiInscripcion(
+          lead.usuarioId,
+          lead.moduloId,
+        );
+
+      /*
+       * Solo crear si todavía no existe.
+       * Esto evita inscripciones duplicadas.
+       */
+      if (!estadoInscripcion.inscrito) {
+        await this.inscripcionesService.create({
+          estudianteId: lead.usuarioId,
+          moduloId: lead.moduloId,
+        });
+      }
     }
 
     const convertidoEn =

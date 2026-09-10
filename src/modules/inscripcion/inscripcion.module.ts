@@ -15,6 +15,7 @@ import { ModuloModule } from 'src/modules/modulo/modulo.module';
       provide: InscripcionesRepository,
       useClass: PrismaInscripcionesRepository,
     }
-  ]
+  ],
+  exports: [InscripcionesService],
 })
 export class InscripcionModule { }

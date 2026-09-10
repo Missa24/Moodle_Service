@@ -233,7 +233,7 @@ model Precio {
   id       String   @id @default(cuid())
   moduloId String
   costo    Decimal  @db.Decimal(10, 2)
-  urlPago String?
+  urlPago  String?
   creadoEn DateTime @default(now())
 
   modulo Modulo @relation(fields: [moduloId], references: [id], onDelete: Cascade)
@@ -307,7 +307,7 @@ model Inscripcion {
 
 enum EstadoLead {
   INTERESADO
-  PAGO_INICIADO
+  PAGO_COMPLETADO
   CONVERTIDO
   DESCARTADO
 }

@@ -5,8 +5,10 @@ import {
   IsBoolean,
   IsInt,
   IsNumber,
+  IsUrl,
   Min,
 } from 'class-validator';
+
 import { Type, Transform } from 'class-transformer';
 
 export class CreateModuloDto {
@@ -47,4 +49,11 @@ export class CreateModuloDto {
   @IsNumber()
   @Min(0)
   costo?: number;
+
+  @IsOptional()
+  @IsUrl({
+    protocols: ['http', 'https'],
+    require_protocol: true,
+  })
+  urlPago?: string;
 }
