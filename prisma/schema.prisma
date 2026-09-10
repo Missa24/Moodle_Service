@@ -233,6 +233,7 @@ model Precio {
   id       String   @id @default(cuid())
   moduloId String
   costo    Decimal  @db.Decimal(10, 2)
+  urlPago String?
   creadoEn DateTime @default(now())
 
   modulo Modulo @relation(fields: [moduloId], references: [id], onDelete: Cascade)
