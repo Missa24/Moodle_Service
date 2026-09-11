@@ -102,4 +102,49 @@ export class CloudinaryService {
       cloudName: process.env.CLOUDINARY_CLOUD_NAME,
     };
   }
+
+  async uploadVideoTest(
+    file: Express.Multer.File,
+    folder: string,
+  ): Promise<{
+    publicId: string;
+    resourceType: string;
+    format: string;
+  }> {
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder,
+          resource_type: 'video',
+          type: 'authenticated',
+          use_filename: true,
+          unique_filename: true,
+        },
+        (error, result) => {
+          if (error || !result) {
+            reject(error);
+            return;
+          }
+
+          resolve({
+            publicId: result.public_id,
+            resourceType: result.resource_type,
+            format: result.format,
+          });
+        },
+      );
+
+      Readable.from(file.buffer).pipe(uploadStream);
+    });
+  }
+
+  generarUrlVideoPrivada(publicId: string): string {
+    return cloudinary.url(publicId, {
+      resource_type: 'video',
+      type: 'authenticated',
+      sign_url: true,
+      secure: true,
+    });
+  }
+
 }

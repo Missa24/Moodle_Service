@@ -1,12 +1,17 @@
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsInt, Min } from "class-validator";
+import { Transform, Type } from "class-transformer";
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+} from "class-validator";
 
 export class CreateLeccionDto {
   @IsString()
-  @IsNotEmpty()
   moduloId!: string;
 
   @IsString()
-  @IsNotEmpty()
   nombre!: string;
 
   @IsOptional()
@@ -18,7 +23,6 @@ export class CreateLeccionDto {
   contenidoHtml?: string;
 
   @IsString()
-  @IsNotEmpty()
   tipoLeccion!: string;
 
   @IsOptional()
@@ -30,19 +34,23 @@ export class CreateLeccionDto {
   proveedorVideo?: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(0)
   orden?: number;
 
   @IsOptional()
+  @Transform(({ value }) => value === "true" || value === true)
   @IsBoolean()
   esVistaPrevia?: boolean;
 
   @IsOptional()
+  @Transform(({ value }) => value === "true" || value === true)
   @IsBoolean()
   requiereLeccionAnteriorCompletada?: boolean;
 
   @IsOptional()
+  @Transform(({ value }) => value === "true" || value === true)
   @IsBoolean()
   estaPublicada?: boolean;
 }

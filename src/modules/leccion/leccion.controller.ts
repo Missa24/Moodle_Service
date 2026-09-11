@@ -9,6 +9,8 @@ import {
   Query,
   Request,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
 
 import { LeccionService } from './leccion.service';
@@ -24,6 +26,7 @@ import { MarcarCompletadaDto } from 'src/modules/leccion/dto/responder-formulari
 import { PermissionGuard } from 'src/common/guards/permission.guard';
 import { Permission } from 'src/common/decorator/decorator';
 import { Public } from 'src/auth/decorators/public.decorator';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @Controller('lecciones')
 export class LeccionController {
@@ -32,8 +35,12 @@ export class LeccionController {
   @Post()
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @Permission('lecciones.crear')
-  create(@Body() dto: CreateLeccionDto) {
-    return this.leccionService.create(dto);
+  @UseInterceptors(FileInterceptor('video'))
+  create(
+    @Body() dto: CreateLeccionDto,
+    @UploadedFile() video?: Express.Multer.File,
+  ) {
+    return this.leccionService.create(dto, video);
   }
 
   @Public()

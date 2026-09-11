@@ -5,34 +5,78 @@ import { CreateLeccionDto } from "./dto/create-leccion.dto";
 import { UpdateLeccionDto } from "./dto/update-leccion.dto";
 import { QueryLeccionDto } from "./dto/query-leccion.dto";
 import { ProgresoService } from "src/modules/progreso/progreso.service";
+import { CloudinaryService } from "src/cloudinary/cloudinary.service";
 
 @Injectable()
 export class LeccionService {
   constructor(private readonly prisma: PrismaService,
-    private readonly progresoService: ProgresoService
+    private readonly progresoService: ProgresoService,
+    private readonly cloudinaryService: CloudinaryService,
   ) { }
 
-  async create(dto: CreateLeccionDto) {
-    const modulo = await this.prisma.modulo.findUnique({ where: { id: dto.moduloId } });
+  async create(
+    dto: CreateLeccionDto,
+    video?: Express.Multer.File,
+  ) {
+    const modulo = await this.prisma.modulo.findUnique({
+      where: { id: dto.moduloId },
+    });
+
     if (!modulo) {
-      throw new NotFoundException("El módulo indicado no existe");
+      throw new NotFoundException('El módulo indicado no existe');
+    }
+
+    let urlVideo = dto.urlVideo;
+
+    if (video) {
+      if (!video.mimetype.startsWith('video/')) {
+        throw new BadRequestException(
+          'El archivo enviado debe ser un video',
+        );
+      }
+
+      const resultado = await this.cloudinaryService.uploadVideoTest(
+        video,
+        `lecciones/${dto.moduloId}`,
+      );
+
+      urlVideo = resultado.publicId;
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const totalLecciones = await tx.leccion.count({ where: { moduloId: dto.moduloId } });
+      const totalLecciones = await tx.leccion.count({
+        where: { moduloId: dto.moduloId },
+      });
 
       const ordenDeseado = dto.orden ?? totalLecciones + 1;
-      const ordenFinal = Math.min(Math.max(ordenDeseado, 1), totalLecciones + 1);
+
+      const ordenFinal = Math.min(
+        Math.max(ordenDeseado, 1),
+        totalLecciones + 1,
+      );
 
       if (ordenFinal <= totalLecciones) {
         await tx.leccion.updateMany({
-          where: { moduloId: dto.moduloId, orden: { gte: ordenFinal } },
-          data: { orden: { increment: 1 } },
+          where: {
+            moduloId: dto.moduloId,
+            orden: { gte: ordenFinal },
+          },
+          data: {
+            orden: { increment: 1 },
+          },
         });
       }
-      return tx.leccion.create({ data: { ...dto, orden: ordenFinal } });
+
+      return tx.leccion.create({
+        data: {
+          ...dto,
+          urlVideo,
+          orden: ordenFinal,
+        },
+      });
     });
   }
+
 
   async findByModulo(moduloId: string, query: QueryLeccionDto) {
     const modulo = await this.prisma.modulo.findUnique({ where: { id: moduloId } });
@@ -121,7 +165,13 @@ export class LeccionService {
       where: { id },
       include: {
         recursos: { orderBy: { orden: "asc" } },
-        modulo: { select: { id: true, nombre: true, cursoId: true } },
+        modulo: {
+          select: {
+            id: true,
+            nombre: true,
+            cursoId: true,
+          },
+        },
       },
     });
 
@@ -129,11 +179,22 @@ export class LeccionService {
       throw new NotFoundException("Lección no encontrada");
     }
 
+    // Admin: puede acceder directamente
     if (esAdmin || !estudianteId) {
-      return { ...leccion, bloqueada: false, motivoBloqueo: null };
+      return {
+        ...leccion,
+        urlVideo: leccion.urlVideo
+          ? this.cloudinaryService.generarUrlVideoPrivada(leccion.urlVideo)
+          : null,
+        bloqueada: false,
+        motivoBloqueo: null,
+      };
     }
 
-    const acceso = await this.verificarAcceso(leccion, estudianteId);
+    const acceso = await this.verificarAcceso(
+      leccion,
+      estudianteId,
+    );
 
     if (!acceso.puedeAcceder) {
       return {
@@ -147,8 +208,16 @@ export class LeccionService {
       };
     }
 
-    return { ...leccion, bloqueada: false, motivoBloqueo: null };
+    return {
+      ...leccion,
+      urlVideo: leccion.urlVideo
+        ? this.cloudinaryService.generarUrlVideoPrivada(leccion.urlVideo)
+        : null,
+      bloqueada: false,
+      motivoBloqueo: null,
+    };
   }
+
 
   private async verificarAcceso(
     leccion: { id: string; moduloId: string; esVistaPrevia: boolean; requiereLeccionAnteriorCompletada: boolean },
