@@ -125,12 +125,12 @@ export class ProgresoService {
 
     if (transicionACompletado) {
       await this.certificadoService.emitirCertificadoModulo(inscripcion.id);
-      await this.notificacionesService.crearUnica({
+      await this.notificacionesService.crear({
         usuarioId: inscripcion.estudianteId,
         tipo: 'modulo_completado',
         titulo: `¡Felicidades! Has completado el módulo "${inscripcion.modulo.nombre}"`,
         contenido: `Has completado todas las lecciones del módulo "${inscripcion.modulo.nombre}". ¡Sigue así!`,
-        urlAccion: '/certificados',
+        urlAccion: '/panel/certificados',
       });
 
       cursoCompleto = await this.verificarCursoCompleto(
@@ -144,12 +144,12 @@ export class ProgresoService {
           inscripcion.modulo.cursoId,
         );
 
-        await this.notificacionesService.crearUnica({
+        await this.notificacionesService.crear({
           usuarioId: inscripcion.estudianteId,
           tipo: 'curso_completado',
           titulo: `¡Felicidades! Has completado el curso`,
           contenido: `Has completado el curso "${inscripcion.modulo.curso.nombre}".`,
-          urlAccion: '/certificados'
+          urlAccion: '/panel/certificados'
         });
       }
     }

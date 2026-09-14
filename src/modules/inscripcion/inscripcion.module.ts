@@ -6,9 +6,10 @@ import { PrismaInscripcionesRepository } from './repositories/prisma-inscripcion
 import { InscripcionesRepository } from './repositories/inscripciones.repository';
 import { UserModule } from 'src/modules/user/user.module';
 import { ModuloModule } from 'src/modules/modulo/modulo.module';
+import { NotificacionesModule } from '../notificaciones/notificaciones.module';
 
 @Module({
-  imports: [ModuloModule, UserModule],
+  imports: [ModuloModule, UserModule, NotificacionesModule],
   controllers: [InscripcionesController],
   providers: [InscripcionesService,
     {

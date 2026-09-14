@@ -15,7 +15,7 @@ import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { PermissionGuard } from 'src/common/guards/permission.guard';
 import { Permission } from 'src/common/decorator/decorator';
 import type { AuthenticatedRequest } from 'src/common/types/authenticated-user';
-import { EstadoLead } from '@prisma/client';
+import { UpdateEstadoLeadDto } from './dto/update-estado-lead.dto';
 
 @Controller('leads')
 export class LeadController {
@@ -90,15 +90,27 @@ export class LeadController {
 
 
   @Patch(':id/estado')
-  @UseGuards(JwtAuthGuard)
-  @Permission('leads.ver')
-  async updateEstado(
+  updateEstado(
     @Param('id') id: string,
-    @Body('estado') estado: EstadoLead,
+    @Body() dto: UpdateEstadoLeadDto,
   ) {
+    const {
+      estado,
+      medioPago,
+      moneda,
+      referenciaPago,
+      observaciones,
+    } = dto;
+
     return this.leadService.updateEstado(
       id,
       estado,
+      {
+        medioPago,
+        moneda,
+        referenciaPago,
+        observaciones,
+      },
     );
   }
 }

@@ -13,7 +13,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { InscripcionesService } from 'src/modules/inscripcion/inscripciones.service';
 import { VentasService } from 'src/ventas/ventas.service';
 
-
 type DatosPagoLead = {
   medioPago?: MedioPago;
   moneda?: string;
@@ -363,7 +362,6 @@ export class LeadService {
           lead.moduloId,
         );
 
-      let nuevaInscripcion = false;
 
       if (!estadoInscripcion.inscrito) {
         await this.inscripcionesService.create({
@@ -371,7 +369,6 @@ export class LeadService {
           moduloId: lead.moduloId,
         });
 
-        nuevaInscripcion = true;
       }
 
       const inscripcion = await this.prisma.inscripcion.findFirst({
@@ -404,19 +401,6 @@ export class LeadService {
             inscripcionId: inscripcion.id,
           },
         );
-      }
-
-      if (nuevaInscripcion) {
-        await this.prisma.notificaciones.create({
-          data: {
-            usuarioId: lead.usuarioId,
-            tipo: 'INSCRIPCION',
-            titulo: '¡Ya estás inscrito!',
-            contenido: `Fuiste inscrito correctamente al módulo ${lead.modulo.nombre} del curso ${lead.modulo.curso.nombre}.`,
-            urlAccion: '/panel/cursos/mis-cursos',
-            estado: 'pendiente',
-          },
-        });
       }
     }
 
