@@ -56,4 +56,15 @@ export class CreateModuloDto {
     require_protocol: true,
   })
   urlPago?: string;
+
+  @IsOptional()
+  @IsUrl({
+    protocols: ['http', 'https'],
+    require_protocol: true,
+  })
+  urlPagoBolivia?: string;
+
+  @IsOptional()
+  @IsString()
+  descuentoId?: string;
 }

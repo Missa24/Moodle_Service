@@ -1,5 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+
+import {
+  Prisma,
+  TipoDescuento,
+} from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -11,6 +18,24 @@ import { QueryModuloCursoDto } from './dto/query-modulo-curso.dto';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { PrecioService } from '../precio/precio.service';
 
+type PrecioActual = {
+  costo: Prisma.Decimal;
+  urlPago: string | null;
+  urlPagoBolivia: string | null;
+} | null;
+
+type DescuentoModuloVigente = {
+  descuento: {
+    id: string;
+    nombre: string;
+    descripcion: string | null;
+    tipo: TipoDescuento;
+    valor: Prisma.Decimal;
+    iniciaEn: Date;
+    finalizaEn: Date;
+  };
+};
+
 @Injectable()
 export class ModuloService {
   constructor(
@@ -19,15 +44,182 @@ export class ModuloService {
     private readonly precioService: PrecioService,
   ) { }
 
+  private redondearMonto(
+    valor: number,
+  ) {
+    return (
+      Math.round(
+        (valor + Number.EPSILON) * 100,
+      ) / 100
+    );
+  }
+
+  private calcularPrecio(
+    precioActual: PrecioActual,
+    descuentos: DescuentoModuloVigente[],
+  ) {
+    if (!precioActual) {
+      return {
+        costo: null,
+        descuento: null,
+        montoDescuento: 0,
+        precioFinal: null,
+        urlPago: null,
+        urlPagoBolivia: null,
+      };
+    }
+
+    const costo =
+      Number(
+        precioActual.costo,
+      );
+
+    if (
+      descuentos.length === 0
+    ) {
+      return {
+        costo,
+
+        descuento: null,
+
+        montoDescuento: 0,
+
+        precioFinal:
+          costo,
+
+        urlPago:
+          precioActual.urlPago,
+
+        urlPagoBolivia:
+          precioActual.urlPagoBolivia,
+      };
+    }
+
+    const descuentosOrdenados =
+      [...descuentos].sort(
+        (a, b) =>
+          b.descuento.iniciaEn.getTime() -
+          a.descuento.iniciaEn.getTime(),
+      );
+
+    const descuentoActual =
+      descuentosOrdenados[0]
+        .descuento;
+
+    const valorDescuento =
+      Number(
+        descuentoActual.valor,
+      );
+
+    let montoDescuento =
+      0;
+
+    if (
+      descuentoActual.tipo ===
+      TipoDescuento.PORCENTAJE
+    ) {
+      montoDescuento =
+        costo *
+        (valorDescuento /
+          100);
+    }
+
+    if (
+      descuentoActual.tipo ===
+      TipoDescuento.MONTO_FIJO
+    ) {
+      montoDescuento =
+        valorDescuento;
+    }
+
+    montoDescuento =
+      Math.min(
+        montoDescuento,
+        costo,
+      );
+
+    montoDescuento =
+      this.redondearMonto(
+        montoDescuento,
+      );
+
+    const precioFinal =
+      this.redondearMonto(
+        Math.max(
+          costo -
+          montoDescuento,
+          0,
+        ),
+      );
+
+    return {
+      costo,
+
+      descuento: {
+        id:
+          descuentoActual.id,
+
+        nombre:
+          descuentoActual.nombre,
+
+        descripcion:
+          descuentoActual.descripcion,
+
+        tipo:
+          descuentoActual.tipo,
+
+        valor:
+          valorDescuento,
+
+        iniciaEn:
+          descuentoActual.iniciaEn,
+
+        finalizaEn:
+          descuentoActual.finalizaEn,
+      },
+
+      montoDescuento,
+
+      precioFinal,
+
+      urlPago:
+        precioActual.urlPago,
+
+      urlPagoBolivia:
+        precioActual.urlPagoBolivia,
+    };
+  }
+
+  private async validarDescuento(
+    descuentoId: string,
+  ) {
+    const descuento =
+      await this.prisma.descuento.findUnique({
+        where: {
+          id: descuentoId,
+        },
+      });
+
+    if (!descuento) {
+      throw new NotFoundException(
+        'El descuento seleccionado no existe',
+      );
+    }
+
+    return descuento;
+  }
+
   async create(
     createModuloDto: CreateModuloDto,
     file?: Express.Multer.File,
   ) {
-    const curso = await this.prisma.curso.findUnique({
-      where: {
-        id: createModuloDto.cursoId,
-      },
-    });
+    const curso =
+      await this.prisma.curso.findUnique({
+        where: {
+          id:
+            createModuloDto.cursoId,
+        },
+      });
 
     if (!curso) {
       throw new NotFoundException(
@@ -35,7 +227,31 @@ export class ModuloService {
       );
     }
 
-    let rutaImagen: string | undefined;
+    const {
+      costo,
+      urlPago,
+      urlPagoBolivia,
+      descuentoId,
+      ...moduloData
+    } = createModuloDto;
+
+    /*
+     * Si seleccionaron descuento,
+     * lo validamos antes de crear
+     * el módulo.
+     */
+    if (
+      descuentoId &&
+      descuentoId.trim()
+    ) {
+      await this.validarDescuento(
+        descuentoId,
+      );
+    }
+
+    let rutaImagen:
+      | string
+      | undefined;
 
     if (file) {
       const imagen =
@@ -44,37 +260,87 @@ export class ModuloService {
           'lms/modulos',
         );
 
-      rutaImagen = imagen.url;
+      rutaImagen =
+        imagen.url;
     }
 
-    const {
-      costo,
-      urlPago,
-      ...moduloData
-    } = createModuloDto;
+    const ultimoModulo =
+      await this.prisma.modulo.findFirst({
+        where: {
+          cursoId:
+            createModuloDto.cursoId,
+        },
 
-    const modulo = await this.prisma.modulo.create({
-      data: {
-        ...moduloData,
-        rutaImagen,
-      },
-    });
+        orderBy: {
+          orden: 'desc',
+        },
 
-    if (
+        select: {
+          orden: true,
+        },
+      });
+
+    const siguienteOrden =
+      (ultimoModulo?.orden ??
+        -1) + 1;
+
+    const modulo =
+      await this.prisma.modulo.create({
+        data: {
+          ...moduloData,
+
+          orden:
+            siguienteOrden,
+
+          rutaImagen,
+        },
+      });
+
+    const crearPrecio =
       costo !== undefined ||
-      urlPago !== undefined
-    ) {
+      urlPago !== undefined ||
+      urlPagoBolivia !==
+      undefined;
+
+    if (crearPrecio) {
       await this.precioService.create({
-        moduloId: modulo.id,
-        costo: costo ?? 0,
-        urlPago: urlPago ?? null,
+        moduloId:
+          modulo.id,
+
+        costo:
+          costo ?? 0,
+
+        urlPago:
+          urlPago ?? null,
+
+        urlPagoBolivia:
+          urlPagoBolivia ??
+          null,
       });
     }
 
-    return this.findOne(modulo.id);
+    if (
+      descuentoId &&
+      descuentoId.trim()
+    ) {
+      await this.prisma.descuentoModulo.create({
+        data: {
+          moduloId:
+            modulo.id,
+
+          descuentoId,
+        },
+      });
+    }
+
+    return this.findOne(
+      modulo.id,
+    );
   }
 
-  async findAll(query: QueryModuloDto) {
+  async findAll(
+    query: QueryModuloDto,
+  ) {
     const {
       page = 1,
       limit = 10,
@@ -84,11 +350,18 @@ export class ModuloService {
       estaPublicado,
     } = query;
 
-    const where: Prisma.ModuloWhereInput = {
+    const ahora =
+      new Date();
+
+    const where:
+      Prisma.ModuloWhereInput = {
       ...(nombre && {
         nombre: {
-          contains: nombre,
-          mode: 'insensitive',
+          contains:
+            nombre,
+
+          mode:
+            'insensitive',
         },
       }),
 
@@ -96,7 +369,8 @@ export class ModuloService {
         cursoId,
       }),
 
-      ...(estaPublicado !== undefined && {
+      ...(estaPublicado !==
+        undefined && {
         estaPublicado,
       }),
 
@@ -104,8 +378,11 @@ export class ModuloService {
         curso: {
           categoria: {
             nombre: {
-              contains: categoria,
-              mode: 'insensitive',
+              contains:
+                categoria,
+
+              mode:
+                'insensitive',
             },
           },
         },
@@ -116,22 +393,31 @@ export class ModuloService {
       await this.prisma.$transaction([
         this.prisma.modulo.findMany({
           where,
-          skip: (page - 1) * limit,
-          take: limit,
+
+          skip:
+            (page - 1) *
+            limit,
+
+          take:
+            limit,
 
           orderBy: {
-            orden: 'asc',
+            orden:
+              'asc',
           },
 
           include: {
             curso: {
               select: {
                 id: true,
-                nombre: true,
+
+                nombre:
+                  true,
 
                 categoria: {
                   select: {
-                    nombre: true,
+                    nombre:
+                      true,
                   },
                 },
               },
@@ -139,10 +425,56 @@ export class ModuloService {
 
             precios: {
               orderBy: {
-                creadoEn: 'desc',
+                creadoEn:
+                  'desc',
               },
 
               take: 1,
+            },
+
+            descuentos: {
+              where: {
+                descuento: {
+                  habilitado:
+                    true,
+
+                  iniciaEn: {
+                    lte:
+                      ahora,
+                  },
+
+                  finalizaEn: {
+                    gte:
+                      ahora,
+                  },
+                },
+              },
+
+              include: {
+                descuento: {
+                  select: {
+                    id: true,
+
+                    nombre:
+                      true,
+
+                    descripcion:
+                      true,
+
+                    tipo:
+                      true,
+
+                    valor:
+                      true,
+
+                    iniciaEn:
+                      true,
+
+                    finalizaEn:
+                      true,
+                  },
+                },
+              },
             },
           },
         }),
@@ -152,26 +484,31 @@ export class ModuloService {
         }),
       ]);
 
-    const data = modulos.map((modulo) => {
-      const {
-        precios,
-        ...rest
-      } = modulo;
+    const data =
+      modulos.map(
+        (modulo) => {
+          const {
+            precios,
+            descuentos,
+            ...rest
+          } = modulo;
 
-      const precioActual =
-        precios[0] ?? null;
+          const precioActual =
+            precios[0] ??
+            null;
 
-      return {
-        ...rest,
+          const precio =
+            this.calcularPrecio(
+              precioActual,
+              descuentos,
+            );
 
-        costo: precioActual
-          ? Number(precioActual.costo)
-          : null,
-
-        urlPago:
-          precioActual?.urlPago ?? null,
-      };
-    });
+          return {
+            ...rest,
+            ...precio,
+          };
+        },
+      );
 
     return {
       data,
@@ -180,8 +517,11 @@ export class ModuloService {
         total,
         page,
         limit,
+
         totalPages:
-          Math.ceil(total / limit),
+          Math.ceil(
+            total / limit,
+          ),
       },
     };
   }
@@ -193,7 +533,8 @@ export class ModuloService {
     const curso =
       await this.prisma.curso.findUnique({
         where: {
-          id: cursoId,
+          id:
+            cursoId,
         },
       });
 
@@ -210,18 +551,26 @@ export class ModuloService {
       estaPublicado,
     } = query;
 
-    const where: Prisma.ModuloWhereInput = {
+    const ahora =
+      new Date();
+
+    const where:
+      Prisma.ModuloWhereInput = {
       cursoId,
 
       ...(nombre && {
         nombre: {
-          contains: nombre,
-          mode: 'insensitive',
+          contains:
+            nombre,
+
+          mode:
+            'insensitive',
         },
       }),
 
       estaPublicado:
-        estaPublicado !== undefined
+        estaPublicado !==
+          undefined
           ? estaPublicado
           : true,
     };
@@ -231,20 +580,71 @@ export class ModuloService {
         this.prisma.modulo.findMany({
           where,
 
-          skip: (page - 1) * limit,
-          take: limit,
+          skip:
+            (page - 1) *
+            limit,
+
+          take:
+            limit,
 
           orderBy: {
-            orden: 'asc',
+            orden:
+              'asc',
           },
 
           include: {
             precios: {
               orderBy: {
-                creadoEn: 'desc',
+                creadoEn:
+                  'desc',
               },
 
               take: 1,
+            },
+
+            descuentos: {
+              where: {
+                descuento: {
+                  habilitado:
+                    true,
+
+                  iniciaEn: {
+                    lte:
+                      ahora,
+                  },
+
+                  finalizaEn: {
+                    gte:
+                      ahora,
+                  },
+                },
+              },
+
+              include: {
+                descuento: {
+                  select: {
+                    id: true,
+
+                    nombre:
+                      true,
+
+                    descripcion:
+                      true,
+
+                    tipo:
+                      true,
+
+                    valor:
+                      true,
+
+                    iniciaEn:
+                      true,
+
+                    finalizaEn:
+                      true,
+                  },
+                },
+              },
             },
           },
         }),
@@ -254,26 +654,31 @@ export class ModuloService {
         }),
       ]);
 
-    const data = modulos.map((modulo) => {
-      const {
-        precios,
-        ...rest
-      } = modulo;
+    const data =
+      modulos.map(
+        (modulo) => {
+          const {
+            precios,
+            descuentos,
+            ...rest
+          } = modulo;
 
-      const precioActual =
-        precios[0] ?? null;
+          const precioActual =
+            precios[0] ??
+            null;
 
-      return {
-        ...rest,
+          const precio =
+            this.calcularPrecio(
+              precioActual,
+              descuentos,
+            );
 
-        costo: precioActual
-          ? Number(precioActual.costo)
-          : null,
-
-        urlPago:
-          precioActual?.urlPago ?? null,
-      };
-    });
+          return {
+            ...rest,
+            ...precio,
+          };
+        },
+      );
 
     return {
       data,
@@ -282,13 +687,21 @@ export class ModuloService {
         total,
         page,
         limit,
+
         totalPages:
-          Math.ceil(total / limit),
+          Math.ceil(
+            total / limit,
+          ),
       },
     };
   }
 
-  async findOne(id: string) {
+  async findOne(
+    id: string,
+  ) {
+    const ahora =
+      new Date();
+
     const modulo =
       await this.prisma.modulo.findUnique({
         where: {
@@ -306,17 +719,66 @@ export class ModuloService {
 
           _count: {
             select: {
-              lecciones: true,
-              inscripciones: true,
+              lecciones:
+                true,
+
+              inscripciones:
+                true,
             },
           },
 
           precios: {
             orderBy: {
-              creadoEn: 'desc',
+              creadoEn:
+                'desc',
             },
 
             take: 1,
+          },
+
+          descuentos: {
+            where: {
+              descuento: {
+                habilitado:
+                  true,
+
+                iniciaEn: {
+                  lte:
+                    ahora,
+                },
+
+                finalizaEn: {
+                  gte:
+                    ahora,
+                },
+              },
+            },
+
+            include: {
+              descuento: {
+                select: {
+                  id: true,
+
+                  nombre:
+                    true,
+
+                  descripcion:
+                    true,
+
+                  tipo:
+                    true,
+
+                  valor:
+                    true,
+
+                  iniciaEn:
+                    true,
+
+                  finalizaEn:
+                    true,
+                },
+              },
+            },
           },
         },
       });
@@ -329,34 +791,46 @@ export class ModuloService {
 
     const {
       precios,
+      descuentos,
       ...rest
     } = modulo;
 
     const precioActual =
-      precios[0] ?? null;
+      precios[0] ??
+      null;
+
+    const precio =
+      this.calcularPrecio(
+        precioActual,
+        descuentos,
+      );
 
     return {
       ...rest,
+      ...precio,
 
-      costo: precioActual
-        ? Number(precioActual.costo)
-        : null,
-
-      urlPago:
-        precioActual?.urlPago ?? null,
+      descuentoId:
+        precio.descuento?.id ??
+        null,
     };
   }
 
-  async findLecciones(id: string) {
-    await this.findOne(id);
+  async findLecciones(
+    id: string,
+  ) {
+    await this.findOne(
+      id,
+    );
 
     return this.prisma.leccion.findMany({
       where: {
-        moduloId: id,
+        moduloId:
+          id,
       },
 
       orderBy: {
-        orden: 'asc',
+        orden:
+          'asc',
       },
     });
   }
@@ -367,7 +841,31 @@ export class ModuloService {
     file?: Express.Multer.File,
   ) {
     const moduloActual =
-      await this.findOne(id);
+      await this.findOne(
+        id,
+      );
+
+    const {
+      costo,
+      urlPago,
+      urlPagoBolivia,
+      descuentoId,
+      ...moduloData
+    } = updateModuloDto;
+
+    const actualizarDescuento =
+      descuentoId !==
+      undefined;
+
+    if (
+      actualizarDescuento &&
+      descuentoId &&
+      descuentoId.trim()
+    ) {
+      await this.validarDescuento(
+        descuentoId,
+      );
+    }
 
     let rutaImagen:
       | string
@@ -380,14 +878,9 @@ export class ModuloService {
           'lms/modulos',
         );
 
-      rutaImagen = imagen.url;
+      rutaImagen =
+        imagen.url;
     }
-
-    const {
-      costo,
-      urlPago,
-      ...moduloData
-    } = updateModuloDto;
 
     await this.prisma.modulo.update({
       where: {
@@ -405,11 +898,14 @@ export class ModuloService {
 
     const actualizarPrecio =
       costo !== undefined ||
-      urlPago !== undefined;
+      urlPago !== undefined ||
+      urlPagoBolivia !==
+      undefined;
 
     if (actualizarPrecio) {
       await this.precioService.create({
-        moduloId: id,
+        moduloId:
+          id,
 
         costo:
           costo ??
@@ -420,14 +916,57 @@ export class ModuloService {
           urlPago ??
           moduloActual.urlPago ??
           null,
+
+        urlPagoBolivia:
+          urlPagoBolivia ??
+          moduloActual.urlPagoBolivia ??
+          null,
       });
     }
 
-    return this.findOne(id);
+    if (
+      actualizarDescuento
+    ) {
+      await this.prisma.descuentoModulo.deleteMany({
+        where: {
+          moduloId:
+            id,
+        },
+      });
+
+      /*
+       * Si llegó un ID real,
+       * creamos la nueva relación.
+       *
+       * Si llegó "",
+       * queda sin descuento.
+       */
+      if (
+        descuentoId &&
+        descuentoId.trim()
+      ) {
+        await this.prisma.descuentoModulo.create({
+          data: {
+            moduloId:
+              id,
+
+            descuentoId,
+          },
+        });
+      }
+    }
+
+    return this.findOne(
+      id,
+    );
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
+  async remove(
+    id: string,
+  ) {
+    await this.findOne(
+      id,
+    );
 
     return this.prisma.modulo.update({
       where: {
@@ -435,13 +974,18 @@ export class ModuloService {
       },
 
       data: {
-        estaPublicado: false,
+        estaPublicado:
+          false,
       },
     });
   }
 
-  async restore(id: string) {
-    await this.findOne(id);
+  async restore(
+    id: string,
+  ) {
+    await this.findOne(
+      id,
+    );
 
     return this.prisma.modulo.update({
       where: {
@@ -449,7 +993,8 @@ export class ModuloService {
       },
 
       data: {
-        estaPublicado: true,
+        estaPublicado:
+          true,
       },
     });
   }

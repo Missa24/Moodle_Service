@@ -24,6 +24,8 @@ import { ProgresoModule } from './modules/progreso/progreso.module';
 import { CategoriaModule } from './modules/categoria/categoria.module';
 import { NotificacionesModule } from './modules/notificaciones/notificaciones.module';
 import { LeadModule } from './lead/lead.module';
+import { DescuentoModule } from './modules/descuento/descuento.module';
+import { VentasModule } from './ventas/ventas.module';
 
 
 @Module({
@@ -47,6 +49,8 @@ import { LeadModule } from './lead/lead.module';
     CategoriaModule,
     NotificacionesModule,
     LeadModule,
+    DescuentoModule,
+    VentasModule,
 
   ],
   controllers: [AppController],

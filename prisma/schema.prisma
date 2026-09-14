@@ -28,6 +28,7 @@ model Usuario {
   cuentasOAuth       CuentaOAuth[]
   roles              UsuarioRol[]
   leads              Lead[]
+  ventaModulos       VentaModulo[]
 
   @@map("usuarios")
 }
@@ -223,23 +224,119 @@ model Modulo {
   curso               Curso                     @relation(fields: [cursoId], references: [id], onDelete: Cascade)
   reglaCertificacion  ReglaCertificacionModulo?
 
-  precios Precio[]
-  leads   Lead[]
+  precios      Precio[]
+  leads        Lead[]
+  descuentos   DescuentoModulo[]
+  ventaModulos VentaModulo[]
 
   @@map("modulos")
 }
 
 model Precio {
-  id       String   @id @default(cuid())
+  id       String @id @default(cuid())
   moduloId String
-  costo    Decimal  @db.Decimal(10, 2)
-  urlPago  String?
+
+  costo Decimal @db.Decimal(10, 2)
+
+  urlPago        String?
+  urlPagoBolivia String?
+
   creadoEn DateTime @default(now())
 
   modulo Modulo @relation(fields: [moduloId], references: [id], onDelete: Cascade)
 
   @@index([moduloId, creadoEn])
   @@map("precios")
+}
+
+enum TipoDescuento {
+  PORCENTAJE
+  MONTO_FIJO
+}
+
+enum MedioPago {
+  BOLIVIA
+  PAYPAL
+}
+
+model Descuento {
+  id          String  @id @default(cuid())
+  nombre      String
+  descripcion String?
+
+  tipo  TipoDescuento
+  valor Decimal       @db.Decimal(10, 2)
+
+  iniciaEn   DateTime
+  finalizaEn DateTime
+
+  habilitado Boolean @default(true)
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  modulos DescuentoModulo[]
+  ventas  VentaModulo[]
+
+  @@index([habilitado, iniciaEn, finalizaEn])
+  @@map("descuentos")
+}
+
+model DescuentoModulo {
+  descuentoId String
+  moduloId    String
+
+  descuento Descuento @relation(fields: [descuentoId], references: [id], onDelete: Cascade)
+
+  modulo Modulo @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+
+  @@id([descuentoId, moduloId])
+  @@index([moduloId])
+  @@map("descuento_modulos")
+}
+
+model VentaModulo {
+  id String @id @default(cuid())
+
+  usuarioId     String
+  moduloId      String
+  leadId        String? @unique
+  inscripcionId String? @unique
+  descuentoId   String?
+
+  precioBase Decimal @db.Decimal(10, 2)
+
+  descuentoNombre String?
+  descuentoTipo   TipoDescuento?
+  descuentoValor  Decimal?       @db.Decimal(10, 2)
+
+  montoDescuento Decimal @default(0) @db.Decimal(10, 2)
+
+  montoCobrado       Decimal @db.Decimal(10, 2)
+  comision           Decimal @default(0) @db.Decimal(10, 2)
+  comisionConfirmada Boolean @default(false)
+
+  moneda String @db.VarChar(3)
+
+  medioPago  MedioPago
+  paisCodigo String?   @db.Char(2)
+
+  referenciaPago String?
+  observaciones  String?
+
+  creadoEn DateTime @default(now())
+
+  usuario     Usuario      @relation(fields: [usuarioId], references: [id])
+  modulo      Modulo       @relation(fields: [moduloId], references: [id])
+  lead        Lead?        @relation(fields: [leadId], references: [id])
+  inscripcion Inscripcion? @relation(fields: [inscripcionId], references: [id])
+  descuento   Descuento?   @relation(fields: [descuentoId], references: [id], onDelete: SetNull)
+
+  @@index([usuarioId])
+  @@index([moduloId])
+  @@index([descuentoId])
+  @@index([creadoEn])
+  @@map("ventas_modulos")
 }
 
 model Leccion {
@@ -301,6 +398,7 @@ model Inscripcion {
   modulo             Modulo            @relation(fields: [moduloId], references: [id], onDelete: Cascade)
   progresosLecciones ProgresoLeccion[]
   progresoModulo     ProgresoModulo?
+  ventaModulo        VentaModulo?
 
   @@map("inscripciones")
 }
@@ -326,7 +424,8 @@ model Lead {
 
   usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
-  modulo Modulo @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+  modulo      Modulo       @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+  ventaModulo VentaModulo?
 
   @@unique([usuarioId, moduloId])
   @@index([usuarioId])

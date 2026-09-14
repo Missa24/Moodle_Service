@@ -25,4 +25,11 @@ export class CreatePrecioDto {
     require_protocol: true,
   })
   urlPago?: string | null;
+
+  @IsOptional()
+  @IsUrl({
+    protocols: ['http', 'https'],
+    require_protocol: true,
+  })
+  urlPagoBolivia?: string | null;
 }
