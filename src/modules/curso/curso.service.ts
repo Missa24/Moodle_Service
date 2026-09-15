@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCursoDto } from './dto/create-curso.dto';
 import { UpdateCursoDto } from './dto/update-curso.dto';
@@ -51,53 +52,70 @@ export class CursoService {
     limit: number = 10,
     search?: string,
     categoriaId?: string,
+    conDescuento: boolean = false,
   ) {
-    const pagina = Math.max(page, 1);
-    const limite = Math.min(Math.max(limit, 1), 50);
+    const pagina =
+      Math.max(page, 1);
 
-    const skip = (pagina - 1) * limite;
+    const limite =
+      Math.min(
+        Math.max(limit, 1),
+        50,
+      );
 
-    let filtroCategoria = {};
+    const skip =
+      (pagina - 1) * limite;
+
+    const ahora =
+      new Date();
+
+    let filtroCategoria:
+      Prisma.CursoWhereInput = {};
 
     if (categoriaId) {
-      const categoria = await this.prisma.categoria.findUnique({
-        where: {
-          id: categoriaId,
-        },
-        select: {
-          id: true,
-          categoriaPadreId: true,
-        },
-      });
+      const categoria =
+        await this.prisma.categoria.findUnique({
+          where: {
+            id: categoriaId,
+          },
+
+          select: {
+            id: true,
+            categoriaPadreId: true,
+          },
+        });
 
       if (categoria) {
-        if (categoria.categoriaPadreId === null) {
-          // Categoría padre:
-          // mostrar cursos de la categoría padre
-          // y también cursos de sus subcategorías.
+        if (
+          categoria.categoriaPadreId ===
+          null
+        ) {
           filtroCategoria = {
             OR: [
               {
-                categoriaId: categoria.id,
+                categoriaId:
+                  categoria.id,
               },
+
               {
                 categoria: {
-                  categoriaPadreId: categoria.id,
+                  categoriaPadreId:
+                    categoria.id,
                 },
               },
             ],
           };
         } else {
-          // Subcategoría:
-          // mostrar únicamente los cursos de esa subcategoría.
           filtroCategoria = {
-            categoriaId: categoria.id,
+            categoriaId:
+              categoria.id,
           };
         }
       }
     }
 
-    const where = {
+    const where:
+      Prisma.CursoWhereInput = {
       estado: 'publicado',
 
       ...(search?.trim()
@@ -105,20 +123,31 @@ export class CursoService {
           OR: [
             {
               nombre: {
-                contains: search.trim(),
-                mode: 'insensitive' as const,
+                contains:
+                  search.trim(),
+
+                mode:
+                  'insensitive',
               },
             },
+
             {
               descripcionCorta: {
-                contains: search.trim(),
-                mode: 'insensitive' as const,
+                contains:
+                  search.trim(),
+
+                mode:
+                  'insensitive',
               },
             },
+
             {
               descripcionCompleta: {
-                contains: search.trim(),
-                mode: 'insensitive' as const,
+                contains:
+                  search.trim(),
+
+                mode:
+                  'insensitive',
               },
             },
           ],
@@ -126,16 +155,54 @@ export class CursoService {
         : {}),
 
       ...filtroCategoria,
+
+      ...(conDescuento
+        ? {
+          modulos: {
+            some: {
+              estaPublicado: true,
+
+              descuentos: {
+                some: {
+                  descuento: {
+                    habilitado:
+                      true,
+
+                    iniciaEn: {
+                      lte:
+                        ahora,
+                    },
+
+                    finalizaEn: {
+                      gte:
+                        ahora,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }
+        : {}),
     };
 
-    const [cursos, total] = await Promise.all([
+    const [
+      cursos,
+      total,
+    ] = await Promise.all([
       this.prisma.curso.findMany({
         where,
+
         skip,
-        take: limite,
+
+        take:
+          limite,
+
         orderBy: {
-          creadoEn: 'desc',
+          creadoEn:
+            'desc',
         },
+
         include: {
           categoria: {
             select: {
@@ -152,15 +219,26 @@ export class CursoService {
       }),
     ]);
 
-    const totalPaginas = Math.ceil(total / limite);
+    const totalPaginas =
+      Math.ceil(
+        total / limite,
+      );
 
     return {
-      data: cursos,
+      data:
+        cursos,
+
       meta: {
-        page: pagina,
-        limit: limite,
+        page:
+          pagina,
+
+        limit:
+          limite,
+
         total,
-        totalPages: totalPaginas,
+
+        totalPages:
+          totalPaginas,
       },
     };
   }

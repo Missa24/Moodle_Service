@@ -10,6 +10,7 @@ import {
   DefaultValuePipe,
   ParseIntPipe,
   UseGuards,
+  ParseBoolPipe,
   UseInterceptors,
   UploadedFile,
   UploadedFiles,
@@ -56,12 +57,40 @@ export class CursoController {
   @Public()
   @Get()
   findAll(
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
-    @Query('search') search?: string,
-    @Query('categoriaId') categoriaId?: string,
+    @Query(
+      'page',
+      new DefaultValuePipe(1),
+      ParseIntPipe,
+    )
+    page: number,
+
+    @Query(
+      'limit',
+      new DefaultValuePipe(10),
+      ParseIntPipe,
+    )
+    limit: number,
+
+    @Query('search')
+    search?: string,
+
+    @Query('categoriaId')
+    categoriaId?: string,
+
+    @Query(
+      'conDescuento',
+      new DefaultValuePipe(false),
+      ParseBoolPipe,
+    )
+    conDescuento?: boolean,
   ) {
-    return this.cursoService.findAll(page, limit, search, categoriaId);
+    return this.cursoService.findAll(
+      page,
+      limit,
+      search,
+      categoriaId,
+      conDescuento,
+    );
   }
 
   @Get('curso-modulos')

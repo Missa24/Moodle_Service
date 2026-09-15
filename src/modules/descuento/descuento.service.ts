@@ -553,4 +553,53 @@ export class DescuentoService {
         ),
     };
   }
+  async resumen() {
+    const ahora = new Date();
+
+    const descuentos = await this.prisma.descuento.findMany({
+      where: {
+        habilitado: true,
+        iniciaEn: {
+          lte: ahora,
+        },
+        finalizaEn: {
+          gte: ahora,
+        },
+        modulos: {
+          some: {
+            modulo: {
+              estaPublicado: true,
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+        modulos: {
+          where: {
+            modulo: {
+              estaPublicado: true,
+            },
+          },
+          select: {
+            moduloId: true,
+          },
+        },
+      },
+    });
+
+    const modulosIds = new Set(
+      descuentos.flatMap((descuento) =>
+        descuento.modulos.map(
+          (item) => item.moduloId,
+        ),
+      ),
+    );
+
+    return {
+      hayDescuentos: descuentos.length > 0,
+      cantidadDescuentos: descuentos.length,
+      cantidadModulosConDescuento: modulosIds.size,
+    };
+  }
 }
