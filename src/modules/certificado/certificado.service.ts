@@ -761,8 +761,7 @@ export class CertificadoService {
   private async mapearCertificadoResumen(
     certificado: CertificadoConRelaciones,
   ) {
-    const esModulo =
-      certificado.tipo === 'modulo';
+    const esModulo = certificado.tipo === 'modulo';
 
     const nombre = esModulo
       ? certificado.inscripcion?.modulo?.nombre ?? ''
@@ -783,8 +782,7 @@ export class CertificadoService {
     return {
       idCertificado: certificado.id,
       idInscripcion: certificado.inscripcion?.id ?? null,
-      idModulo:
-        certificado.inscripcion?.modulo?.id ?? null,
+      idModulo: certificado.inscripcion?.modulo?.id ?? null,
       idUsuario: certificado.usuarioId,
       idCurso: cursoId,
       nombre,

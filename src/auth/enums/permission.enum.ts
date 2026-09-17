@@ -19,6 +19,11 @@ export enum Permission {
   CURSO_EDITAR = 'cursos.editar',
   CURSO_ELIMINAR = 'cursos.eliminar',
 
+  MODULO_VER = 'modulos.ver',
+  MODULO_CREAR = 'modulos.crear',
+  MODULO_EDITAR = 'modulos.editar',
+  MODULO_ELIMINAR = 'modulos.eliminar',
+
   LECCION_VER = 'lecciones.ver',
   LECCION_CREAR = 'lecciones.crear',
   LECCION_EDITAR = 'lecciones.editar',
@@ -44,7 +49,11 @@ export enum Permission {
   RECURSO_LECCION_EDITAR = 'recursos_lecciones.editar',
   RECURSO_LECCION_ELIMINAR = 'recursos_lecciones.eliminar',
 
-  CERTIFICADO_VER = "certificados.ver",
+  CERTIFICADO_VER = 'certificados.ver',
 
-  LEAD_VER = "leads.ver",
+  LEAD_VER = 'leads.ver',
+
+  VENTAS_VER = 'ventas.ver',
+  VENTAS_EDITAR = 'ventas.editar',
+  VENTAS_ELIMINAR = 'ventas.eliminar',
 }

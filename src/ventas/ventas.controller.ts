@@ -1,23 +1,33 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
   Patch,
   Query,
-  Body,
+  UseGuards,
 } from '@nestjs/common';
 
 import { VentasService } from './ventas.service';
 import { QueryVentasDto } from './dto/query-ventas.dto';
 import { UpdateComisionDto } from './dto/update-venta.dto';
 
+import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { PermissionsGuard } from 'src/auth/guards/permission.guard';
+import { Permission } from 'src/common/decorator/decorator';
+
 @Controller('ventas')
+@UseGuards(
+  JwtAuthGuard,
+  PermissionsGuard,
+)
 export class VentasController {
   constructor(
     private readonly ventasService: VentasService,
   ) { }
 
   @Get()
+  @Permission('ventas.ver')
   findAll(
     @Query() query: QueryVentasDto,
   ) {
@@ -35,13 +45,17 @@ export class VentasController {
   }
 
   @Get(':id')
+  @Permission('ventas.ver')
   findOne(
     @Param('id') id: string,
   ) {
-    return this.ventasService.findOne(id);
+    return this.ventasService.findOne(
+      id,
+    );
   }
 
   @Patch(':id/comision')
+  @Permission('ventas.editar')
   actualizarComision(
     @Param('id') id: string,
     @Body() dto: UpdateComisionDto,
@@ -53,6 +67,7 @@ export class VentasController {
   }
 
   @Patch(':id/comision/pendiente')
+  @Permission('ventas.editar')
   marcarComisionPendiente(
     @Param('id') id: string,
   ) {

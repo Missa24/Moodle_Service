@@ -19,6 +19,8 @@ import { PrismaService } from "src/prisma/prisma.service";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
 
+import { AccessControlService } from "src/modules/permissions/access-control.service";
+
 type UsuarioAuth = NonNullable<
     Awaited<ReturnType<UserService["buscarPorCorreo"]>>
 >;
@@ -30,6 +32,7 @@ export class AuthService {
         private readonly jwtService: JwtService,
         private readonly menusService: MenusService,
         private readonly prisma: PrismaService,
+        private readonly accessControlService: AccessControlService,
     ) { }
 
     async login(loginDto: LoginDto) {
@@ -71,79 +74,47 @@ export class AuthService {
     async register(dto: RegisterDto) {
         const correo = dto.correo.trim().toLowerCase();
 
-        const existente =
-            await this.prisma.usuario.findUnique({
-                where: { correo },
-            });
-
-        if (existente) {
-            throw new ConflictException(
-                "Ya existe una cuenta con este correo",
-            );
-        }
-
-        const rolEstudiante =
-            await this.prisma.rol.findUnique({
-                where: {
-                    nombre: "ESTUDIANTE",
-                },
-            });
-
-        if (!rolEstudiante) {
-            throw new InternalServerErrorException(
-                "No se encontró el rol ESTUDIANTE",
-            );
-        }
-
-        const contrasenaHash = await bcrypt.hash(
-            dto.contrasena,
-            12,
-        );
-
-        const username =
-            await this.generarUsername(correo);
-
-        await this.prisma.usuario.create({
-            data: {
-                username,
-                correo,
-                contrasenaHash,
-                estado: "activo",
-                perfil: {
-                    create: {
-                        nombre: dto.nombre.trim(),
-                        apellidoPaterno:
-                            dto.apellidoPaterno?.trim(),
-                        apellidoMaterno:
-                            dto.apellidoMaterno?.trim(),
-                        paisCodigo:
-                            dto.paisCodigo
-                                .trim()
-                                .toUpperCase(),
-                    },
-                },
-                roles: {
-                    create: {
-                        rolId: rolEstudiante.id,
-                    },
-                },
-            },
+        const existente = await this.prisma.usuario.findUnique({
+            where: { correo },
         });
 
-        const usuarioCreado =
-            await this.userService.buscarPorCorreo(
-                correo,
-            );
+        if (existente) {
+            throw new ConflictException('Ya existe una cuenta con este correo');
+        }
+
+        const contrasenaHash = await bcrypt.hash(dto.contrasena, 12);
+        const username = await this.generarUsername(correo);
+
+        await this.prisma.$transaction(async tx => {
+            const usuario = await tx.usuario.create({
+                data: {
+                    username,
+                    correo,
+                    contrasenaHash,
+                    estado: 'activo',
+                    perfil: {
+                        create: {
+                            nombre: dto.nombre.trim(),
+                            apellidoPaterno: dto.apellidoPaterno?.trim(),
+                            apellidoMaterno: dto.apellidoMaterno?.trim(),
+                            paisCodigo: dto.paisCodigo.trim().toUpperCase(),
+                        },
+                    },
+                },
+            });
+
+            await this.accessControlService.asignarRolEstudiante(usuario.id, tx);
+        });
+
+        const usuarioCreado = await this.userService.buscarPorCorreo(correo);
 
         if (!usuarioCreado) {
             throw new InternalServerErrorException(
-                "No se pudo recuperar el usuario registrado",
+                'No se pudo recuperar el usuario registrado',
             );
         }
 
-        return this.generarRespuestaAuth(
-            usuarioCreado,
-        );
+        return this.generarRespuestaAuth(usuarioCreado);
     }
 
     async google(credential: string) {
@@ -251,77 +222,40 @@ export class AuthService {
                 usuarioActualizado,
             );
         }
+        const username = await this.generarUsername(correo);
 
-        const rolEstudiante =
-            await this.prisma.rol.findUnique({
-                where: {
-                    nombre:
-                        "ESTUDIANTE",
+        await this.prisma.$transaction(async tx => {
+            const usuario = await tx.usuario.create({
+                data: {
+                    username,
+                    correo,
+                    contrasenaHash: null,
+                    estado: 'activo',
+                    correoVerificadoEn: new Date(),
+                    ultimoAccesoEn: new Date(),
+                    perfil: {
+                        create: {
+                            nombre: payload.given_name ?? payload.name ?? 'Usuario',
+                            apellidoPaterno: payload.family_name ?? null,
+                            fotografiaRuta: payload.picture ?? null,
+                            paisCodigo: null,
+                        },
+                    },
                 },
             });
 
-        if (!rolEstudiante) {
-            throw new InternalServerErrorException(
-                "No se encontró el rol ESTUDIANTE",
-            );
-        }
-
-        const username =
-            await this.generarUsername(
-                correo,
-            );
-
-        await this.prisma.usuario.create({
-            data: {
-                username,
-                correo,
-                contrasenaHash:
-                    null,
-                estado:
-                    "activo",
-                correoVerificadoEn:
-                    new Date(),
-                ultimoAccesoEn:
-                    new Date(),
-                perfil: {
-                    create: {
-                        nombre:
-                            payload.given_name ??
-                            payload.name ??
-                            "Usuario",
-                        apellidoPaterno:
-                            payload.family_name ??
-                            null,
-                        fotografiaRuta:
-                            payload.picture ??
-                            null,
-                        paisCodigo:
-                            null,
-                    },
-                },
-                roles: {
-                    create: {
-                        rolId:
-                            rolEstudiante.id,
-                    },
-                },
-            },
+            await this.accessControlService.asignarRolEstudiante(usuario.id, tx);
         });
 
-        const nuevoUsuario =
-            await this.userService.buscarPorCorreo(
-                correo,
-            );
+        const nuevoUsuario = await this.userService.buscarPorCorreo(correo);
 
         if (!nuevoUsuario) {
             throw new InternalServerErrorException(
-                "No se pudo recuperar el usuario creado con Google",
+                'No se pudo recuperar el usuario creado con Google',
             );
         }
 
-        return this.generarRespuestaAuth(
-            nuevoUsuario,
-        );
+        return this.generarRespuestaAuth(nuevoUsuario);
     }
 
     logout() {
