@@ -247,6 +247,39 @@ export class CursoService {
   async findOne(id: string) {
     const curso = await this.prisma.curso.findUnique({
       where: { id },
+      include: {
+        categoria: {
+          select: {
+            id: true,
+            nombre: true,
+            slug: true,
+          },
+        },
+      },
+    });
+
+    if (!curso) {
+      throw new NotFoundException('Curso no encontrado');
+    }
+
+    return curso;
+  }
+
+  async findOneBySlug(slug: string) {
+    const curso = await this.prisma.curso.findFirst({
+      where: {
+        slug,
+        estado: 'publicado',
+      },
+      include: {
+        categoria: {
+          select: {
+            id: true,
+            nombre: true,
+            slug: true,
+          },
+        },
+      },
     });
 
     if (!curso) {

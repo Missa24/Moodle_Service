@@ -110,6 +110,12 @@ export class CursoController {
     return this.cursoService.findOne(id);
   }
 
+  @Public()
+  @Get('slug/:slug')
+  findOneBySlug(@Param('slug') slug: string) {
+    return this.cursoService.findOneBySlug(slug);
+  }
+
   @Patch(':id/imagen')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @Permissions(Permission.CURSO_EDITAR)
