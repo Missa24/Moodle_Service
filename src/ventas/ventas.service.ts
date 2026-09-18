@@ -686,4 +686,393 @@ export class VentasService {
       actualizado,
     );
   }
+
+
+  async getResumen(desde?: string, hasta?: string) {
+    const where: Prisma.VentaModuloWhereInput = {};
+
+    if (desde || hasta) {
+      where.creadoEn = {};
+
+      if (desde) {
+        where.creadoEn.gte = new Date(`${desde}T00:00:00.000`);
+      }
+
+      if (hasta) {
+        where.creadoEn.lte = new Date(`${hasta}T23:59:59.999`);
+      }
+    }
+
+    const wherePaypal: Prisma.VentaModuloWhereInput = {
+      ...where,
+      medioPago: MedioPago.PAYPAL,
+    };
+
+    const whereBolivia: Prisma.VentaModuloWhereInput = {
+      ...where,
+      medioPago: MedioPago.BOLIVIA,
+    };
+
+    const [
+      totalVentas,
+      resumenGeneral,
+      totalVentasPaypal,
+      resumenPaypal,
+      totalVentasBolivia,
+      resumenBolivia,
+    ] = await this.prisma.$transaction([
+      this.prisma.ventaModulo.count({
+        where,
+      }),
+
+      this.prisma.ventaModulo.aggregate({
+        where,
+        _sum: {
+          montoCobrado: true,
+          comision: true,
+        },
+      }),
+
+      this.prisma.ventaModulo.count({
+        where: wherePaypal,
+      }),
+
+      this.prisma.ventaModulo.aggregate({
+        where: wherePaypal,
+        _sum: {
+          montoCobrado: true,
+          comision: true,
+        },
+      }),
+
+      this.prisma.ventaModulo.count({
+        where: whereBolivia,
+      }),
+
+      this.prisma.ventaModulo.aggregate({
+        where: whereBolivia,
+        _sum: {
+          montoCobrado: true,
+          comision: true,
+        },
+      }),
+    ]);
+
+    const totalCobrado = Number(
+      resumenGeneral._sum.montoCobrado ?? 0,
+    );
+
+    const totalComisiones = Number(
+      resumenGeneral._sum.comision ?? 0,
+    );
+
+    const paypalCobrado = Number(
+      resumenPaypal._sum.montoCobrado ?? 0,
+    );
+
+    const paypalComisiones = Number(
+      resumenPaypal._sum.comision ?? 0,
+    );
+
+    const boliviaCobrado = Number(
+      resumenBolivia._sum.montoCobrado ?? 0,
+    );
+
+    const boliviaComisiones = Number(
+      resumenBolivia._sum.comision ?? 0,
+    );
+
+    return {
+      totalVentas,
+      totalCobrado,
+      totalComisiones,
+      gananciaNeta: totalCobrado - totalComisiones,
+
+      paypal: {
+        ventas: totalVentasPaypal,
+        cobrado: paypalCobrado,
+        comisiones: paypalComisiones,
+        neto: paypalCobrado - paypalComisiones,
+      },
+
+      bolivia: {
+        ventas: totalVentasBolivia,
+        cobrado: boliviaCobrado,
+        comisiones: boliviaComisiones,
+        neto: boliviaCobrado - boliviaComisiones,
+      },
+    };
+  }
+
+  async getEstadisticas(params: {
+    desde?: string;
+    hasta?: string;
+    agrupacion?: string;
+  }) {
+    const agrupacion =
+      params.agrupacion?.trim().toUpperCase() ?? 'MES';
+
+    if (
+      agrupacion !== 'DIA' &&
+      agrupacion !== 'MES' &&
+      agrupacion !== 'ANIO'
+    ) {
+      throw new BadRequestException(
+        'La agrupación debe ser DIA, MES o ANIO',
+      );
+    }
+
+    const crearFecha = (
+      valor: string,
+      finDelDia = false,
+    ) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(valor)) {
+        throw new BadRequestException(
+          'Las fechas deben tener el formato YYYY-MM-DD',
+        );
+      }
+
+      const fecha = new Date(
+        `${valor}T${finDelDia
+          ? '23:59:59.999'
+          : '00:00:00.000'
+        }-04:00`,
+      );
+
+      if (Number.isNaN(fecha.getTime())) {
+        throw new BadRequestException(
+          'La fecha indicada no es válida',
+        );
+      }
+
+      return fecha;
+    };
+
+    const desdeFecha = params.desde
+      ? crearFecha(params.desde)
+      : undefined;
+
+    const hastaFecha = params.hasta
+      ? crearFecha(params.hasta, true)
+      : undefined;
+
+    if (
+      desdeFecha &&
+      hastaFecha &&
+      desdeFecha > hastaFecha
+    ) {
+      throw new BadRequestException(
+        'La fecha inicial no puede ser mayor a la fecha final',
+      );
+    }
+
+    const where: Prisma.VentaModuloWhereInput = {
+      ...(desdeFecha || hastaFecha
+        ? {
+          creadoEn: {
+            ...(desdeFecha && {
+              gte: desdeFecha,
+            }),
+            ...(hastaFecha && {
+              lte: hastaFecha,
+            }),
+          },
+        }
+        : {}),
+    };
+
+    const ventas =
+      await this.prisma.ventaModulo.findMany({
+        where,
+        select: {
+          creadoEn: true,
+          montoCobrado: true,
+          comision: true,
+          medioPago: true,
+        },
+        orderBy: {
+          creadoEn: 'asc',
+        },
+      });
+
+    const obtenerPeriodo = (
+      fecha: Date,
+    ): string => {
+      const partes =
+        new Intl.DateTimeFormat(
+          'en-US',
+          {
+            timeZone: 'America/La_Paz',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          },
+        ).formatToParts(fecha);
+
+      const anio =
+        partes.find(
+          (parte) =>
+            parte.type === 'year',
+        )?.value ?? '';
+
+      const mes =
+        partes.find(
+          (parte) =>
+            parte.type === 'month',
+        )?.value ?? '';
+
+      const dia =
+        partes.find(
+          (parte) =>
+            parte.type === 'day',
+        )?.value ?? '';
+
+      if (agrupacion === 'ANIO') {
+        return anio;
+      }
+
+      if (agrupacion === 'MES') {
+        return `${anio}-${mes}`;
+      }
+
+      return `${anio}-${mes}-${dia}`;
+    };
+
+    type EstadisticaAcumulada = {
+      periodo: string;
+      ventas: number;
+      cobrado: number;
+      comisiones: number;
+      neto: number;
+      paypal: number;
+      bolivia: number;
+    };
+
+    const agrupado =
+      new Map<
+        string,
+        EstadisticaAcumulada
+      >();
+
+    for (const venta of ventas) {
+      const periodo =
+        obtenerPeriodo(
+          venta.creadoEn,
+        );
+
+      const cobrado =
+        Number(
+          venta.montoCobrado,
+        );
+
+      const comision =
+        Number(
+          venta.comision,
+        );
+
+      const neto =
+        cobrado -
+        comision;
+
+      const existente =
+        agrupado.get(periodo);
+
+      if (existente) {
+        existente.ventas += 1;
+        existente.cobrado +=
+          cobrado;
+        existente.comisiones +=
+          comision;
+        existente.neto +=
+          neto;
+
+        if (
+          venta.medioPago ===
+          MedioPago.PAYPAL
+        ) {
+          existente.paypal +=
+            neto;
+        }
+
+        if (
+          venta.medioPago ===
+          MedioPago.BOLIVIA
+        ) {
+          existente.bolivia +=
+            neto;
+        }
+
+        continue;
+      }
+
+      agrupado.set(
+        periodo,
+        {
+          periodo,
+          ventas: 1,
+          cobrado,
+          comisiones: comision,
+          neto,
+          paypal:
+            venta.medioPago ===
+              MedioPago.PAYPAL
+              ? neto
+              : 0,
+          bolivia:
+            venta.medioPago ===
+              MedioPago.BOLIVIA
+              ? neto
+              : 0,
+        },
+      );
+    }
+
+    const redondear = (
+      valor: number,
+    ) =>
+      Math.round(
+        valor * 100,
+      ) / 100;
+
+    const data =
+      Array.from(
+        agrupado.values(),
+      )
+        .sort((a, b) =>
+          a.periodo.localeCompare(
+            b.periodo,
+          ),
+        )
+        .map((item) => ({
+          periodo:
+            item.periodo,
+          ventas:
+            item.ventas,
+          cobrado:
+            redondear(
+              item.cobrado,
+            ),
+          comisiones:
+            redondear(
+              item.comisiones,
+            ),
+          neto:
+            redondear(
+              item.neto,
+            ),
+          paypal:
+            redondear(
+              item.paypal,
+            ),
+          bolivia:
+            redondear(
+              item.bolivia,
+            ),
+        }));
+
+    return {
+      agrupacion,
+      data,
+    };
+  }
 }

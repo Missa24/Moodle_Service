@@ -15,6 +15,7 @@ import { UpdateComisionDto } from './dto/update-venta.dto';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from 'src/auth/guards/permission.guard';
 import { Permission } from 'src/common/decorator/decorator';
+import { PermissionGuard } from 'src/common/guards/permission.guard';
 
 @Controller('ventas')
 @UseGuards(
@@ -42,6 +43,34 @@ export class VentasController {
       limit,
       filtros,
     );
+  }
+
+  @Get("resumen")
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Permission("ventas.ver")
+  getResumen(
+    @Query("desde") desde?: string,
+    @Query("hasta") hasta?: string,
+  ) {
+    return this.ventasService.getResumen(desde, hasta);
+  }
+
+  @Get('estadisticas')
+  getEstadisticas(
+    @Query('desde')
+    desde?: string,
+
+    @Query('hasta')
+    hasta?: string,
+
+    @Query('agrupacion')
+    agrupacion?: string,
+  ) {
+    return this.ventasService.getEstadisticas({
+      desde,
+      hasta,
+      agrupacion,
+    });
   }
 
   @Get(':id')
