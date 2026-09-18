@@ -56,4 +56,9 @@ export enum Permission {
   VENTAS_VER = 'ventas.ver',
   VENTAS_EDITAR = 'ventas.editar',
   VENTAS_ELIMINAR = 'ventas.eliminar',
+
+  DESCUENTOS_VER = 'descuentos.ver',
+  DESCUENTOS_CREAR = 'descuentos.crear',
+  DESCUENTOS_EDITAR = 'descuentos.editar',
+  DESCUENTOS_ELIMINAR = 'descuentos.eliminar',
 }
