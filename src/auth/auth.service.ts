@@ -368,6 +368,7 @@ export class AuthService {
                 permisos,
                 menus,
                 requiereCompletarPerfil,
+                paisCodigo: usuario.perfil?.paisCodigo ?? null,
             },
         };
     }

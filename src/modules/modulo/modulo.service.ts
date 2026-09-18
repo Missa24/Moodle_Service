@@ -212,6 +212,7 @@ export class ModuloService {
   async create(
     createModuloDto: CreateModuloDto,
     file?: Express.Multer.File,
+    qrPagoBolivia?: Express.Multer.File,
   ) {
     const curso =
       await this.prisma.curso.findUnique({
@@ -235,11 +236,6 @@ export class ModuloService {
       ...moduloData
     } = createModuloDto;
 
-    /*
-     * Si seleccionaron descuento,
-     * lo validamos antes de crear
-     * el módulo.
-     */
     if (
       descuentoId &&
       descuentoId.trim()
@@ -262,6 +258,17 @@ export class ModuloService {
 
       rutaImagen =
         imagen.url;
+    }
+
+    let rutaQrPagoBolivia: string | undefined;
+
+    if (qrPagoBolivia) {
+      const imagenQr = await this.cloudinaryService.uploadImage(
+        qrPagoBolivia,
+        'lms/pagos/bolivia',
+      );
+
+      rutaQrPagoBolivia = imagenQr.url;
     }
 
     const ultimoModulo =
@@ -313,9 +320,7 @@ export class ModuloService {
         urlPago:
           urlPago ?? null,
 
-        urlPagoBolivia:
-          urlPagoBolivia ??
-          null,
+        urlPagoBolivia: rutaQrPagoBolivia ?? urlPagoBolivia ?? null,
       });
     }
 
@@ -839,6 +844,7 @@ export class ModuloService {
     id: string,
     updateModuloDto: UpdateModuloDto,
     file?: Express.Multer.File,
+    qrPagoBolivia?: Express.Multer.File,
   ) {
     const moduloActual =
       await this.findOne(
@@ -882,6 +888,17 @@ export class ModuloService {
         imagen.url;
     }
 
+    let rutaQrPagoBolivia: string | undefined;
+
+    if (qrPagoBolivia) {
+      const imagenQr = await this.cloudinaryService.uploadImage(
+        qrPagoBolivia,
+        'lms/pagos/bolivia',
+      );
+
+      rutaQrPagoBolivia = imagenQr.url;
+    }
+
     await this.prisma.modulo.update({
       where: {
         id,
@@ -899,25 +916,16 @@ export class ModuloService {
     const actualizarPrecio =
       costo !== undefined ||
       urlPago !== undefined ||
-      urlPagoBolivia !==
-      undefined;
+      urlPagoBolivia !== undefined ||
+      rutaQrPagoBolivia !== undefined;
 
     if (actualizarPrecio) {
       await this.precioService.create({
-        moduloId:
-          id,
-
-        costo:
-          costo ??
-          moduloActual.costo ??
-          0,
-
-        urlPago:
-          urlPago ??
-          moduloActual.urlPago ??
-          null,
-
+        moduloId: id,
+        costo: costo ?? moduloActual.costo ?? 0,
+        urlPago: urlPago ?? moduloActual.urlPago ?? null,
         urlPagoBolivia:
+          rutaQrPagoBolivia ??
           urlPagoBolivia ??
           moduloActual.urlPagoBolivia ??
           null,
@@ -933,14 +941,6 @@ export class ModuloService {
             id,
         },
       });
-
-      /*
-       * Si llegó un ID real,
-       * creamos la nueva relación.
-       *
-       * Si llegó "",
-       * queda sin descuento.
-       */
       if (
         descuentoId &&
         descuentoId.trim()
