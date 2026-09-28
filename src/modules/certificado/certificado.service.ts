@@ -751,8 +751,7 @@ export class CertificadoService {
     return {
       id: certificado.id,
       tipo: certificado.tipo,
-      nombre:
-        certificado.nombreCertificado,
+      nombre: certificado.nombreCertificado,
 
       modulo:
         inscripcion.modulo.nombre,
@@ -941,8 +940,12 @@ export class CertificadoService {
       );
     }
 
-    const nombre =
-      certificado.nombreCertificado;
+    const nombre = certificado.nombreCertificado?.trim();
+    if (!nombre) {
+      throw new BadRequestException(
+        'El certificado no tiene un nombre asignado',
+      );
+    }
 
     let pdfData:
       | CertificadoPdfData
@@ -1579,20 +1582,12 @@ export class CertificadoService {
           certificado.fechaEmision,
 
         estudiante: {
-          nombreCompleto:
-            certificado.nombreCertificado,
-
+          nombreCompleto: certificado.nombreCertificado ?? "",
           nombre: null,
-
           apellidoPaterno: null,
-
           apellidoMaterno: null,
-
-          tipoDocumentoIdentidad:
-            null,
-
-          numeroDocumento:
-            null,
+          tipoDocumentoIdentidad: null,
+          numeroDocumento: null,
         },
 
         curso,
