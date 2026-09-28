@@ -26,7 +26,7 @@ import { Public } from 'src/auth/decorators/public.decorator';
 export class CertificadosController {
   constructor(
     private readonly certificadoService: CertificadoService,
-  ) {}
+  ) { }
 
   @Get()
   findAll(
@@ -109,6 +109,17 @@ export class CertificadosController {
   ) {
     return this.certificadoService.buscarPorInscripcion(
       inscripcionId,
+    );
+  }
+
+  @Patch(':id/nombre')
+  async actualizarNombreCertificado(
+    @Param('id') id: string,
+    @Body() body: { nombreCertificado: string },
+  ) {
+    return this.certificadoService.actualizarNombreCertificado(
+      id,
+      body.nombreCertificado,
     );
   }
 

@@ -50,6 +50,9 @@ export enum Permission {
   RECURSO_LECCION_ELIMINAR = 'recursos_lecciones.eliminar',
 
   CERTIFICADO_VER = 'certificados.ver',
+  CERTIFICADO_CREAR = 'certificados.crear',
+  CERTIFICADO_EDITAR = 'certificados.editar',
+  CERTIFICADO_ELIMINAR = 'certificados.eliminar',
 
   LEAD_VER = 'leads.ver',
 

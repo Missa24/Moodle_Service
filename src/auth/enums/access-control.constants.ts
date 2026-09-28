@@ -11,5 +11,4 @@ export const ESTUDIANTE_PERMISSIONS: readonly string[] = [
     Permission.LECCION_VER,
     Permission.FORMULARIO_VER,
     Permission.RECURSO_LECCION_VER,
-    Permission.CERTIFICADO_VER,
 ];
