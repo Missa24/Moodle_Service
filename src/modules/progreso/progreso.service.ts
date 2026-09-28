@@ -1,15 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ProgresoModuloResultado } from './type/ProgresoModuloResultado';
-import { CertificadoService } from 'src/modules/certificado/certificado.service';
 import { NotificacionesService } from 'src/modules/notificaciones/notificaciones.service';
 
 @Injectable()
 export class ProgresoService {
 
-  constructor(private readonly prisma: PrismaService,
-    private readonly certificadoService: CertificadoService,
-    private readonly notificacionesService: NotificacionesService
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificacionesService: NotificacionesService,
   ) { }
 
   async recalcularProgresoModulo(inscripcionId: string) {
@@ -27,15 +26,15 @@ export class ProgresoService {
               select: {
                 id: true,
                 nombre: true,
-              }
-            }
+              },
+            },
           },
         },
       },
     });
 
     if (!inscripcion) {
-      throw new NotFoundException("Inscripción no encontrada");
+      throw new NotFoundException('Inscripción no encontrada');
     }
 
     const leccionesTotales = await this.prisma.leccion.count({
@@ -69,7 +68,9 @@ export class ProgresoService {
       leccionesTotales > 0 &&
       leccionesCompletadas >= leccionesTotales;
 
-    const estado = completado ? "completado" : "en_progreso";
+    const estado = completado
+      ? 'completado'
+      : 'en_progreso';
 
     const progresoExistente =
       await this.prisma.progresoModulo.findUnique({
@@ -79,7 +80,8 @@ export class ProgresoService {
       });
 
     const transicionACompletado =
-      completado && progresoExistente?.estado !== 'completado';
+      completado &&
+      progresoExistente?.estado !== 'completado';
 
     const completadoEn = completado
       ? progresoExistente?.completadoEn ?? new Date()
@@ -124,7 +126,7 @@ export class ProgresoService {
     let cursoCompleto = false;
 
     if (transicionACompletado) {
-      await this.certificadoService.emitirCertificadoModulo(inscripcion.id);
+
       await this.notificacionesService.crear({
         usuarioId: inscripcion.estudianteId,
         tipo: 'modulo_completado',
@@ -139,17 +141,12 @@ export class ProgresoService {
       );
 
       if (cursoCompleto) {
-        await this.certificadoService.verificarYEmitirCertificadoCurso(
-          inscripcion.estudianteId,
-          inscripcion.modulo.cursoId,
-        );
-
         await this.notificacionesService.crear({
           usuarioId: inscripcion.estudianteId,
           tipo: 'curso_completado',
           titulo: `¡Felicidades! Has completado el curso`,
           contenido: `Has completado el curso "${inscripcion.modulo.curso.nombre}".`,
-          urlAccion: '/panel/certificados'
+          urlAccion: '/panel/certificados',
         });
       }
     }
@@ -164,6 +161,7 @@ export class ProgresoService {
       porcentaje: progresoModulo.porcentaje,
 
       leccionesTotales: progresoModulo.leccionesTotales,
+
       leccionesCompletadas:
         progresoModulo.leccionesCompletadas,
 
@@ -175,30 +173,42 @@ export class ProgresoService {
       actualizadoEn: progresoModulo.actualizadoEn,
 
       transicionACompletado,
-      cursoCompleto: transicionACompletado && cursoCompleto,
+      cursoCompleto:
+        transicionACompletado && cursoCompleto,
     };
   }
 
-  async obtenerPorModuloYUsuario(moduloId: string, estudianteId: string,) {
+  async obtenerPorModuloYUsuario(
+    moduloId: string,
+    estudianteId: string,
+  ) {
     const inscripcion =
       await this.prisma.inscripcion.findFirst({
-        where: { moduloId, estudianteId },
+        where: {
+          moduloId,
+          estudianteId,
+        },
       });
 
     if (!inscripcion) {
-      throw new NotFoundException("El estudiante no está inscrito en este módulo",);
+      throw new NotFoundException(
+        'El estudiante no está inscrito en este módulo',
+      );
     }
 
     return this.recalcularProgresoModulo(inscripcion.id);
   }
 
-  async obtenerPorInscripcion(inscripcionId: string,) {
+  async obtenerPorInscripcion(
+    inscripcionId: string,
+  ) {
     return this.recalcularProgresoModulo(inscripcionId);
   }
 
   async obtenerPorUsuario(
     estudianteId: string,
   ): Promise<ProgresoModuloResultado[]> {
+
     const inscripciones =
       await this.prisma.inscripcion.findMany({
         where: {
@@ -223,20 +233,26 @@ export class ProgresoService {
     return progresos;
   }
 
-  async obtenerResumenModulo(moduloId: string) {
-    const modulo = await this.prisma.modulo.findUnique({
-      where: {
-        id: moduloId,
-      },
-      select: {
-        id: true,
-        nombre: true,
-        cursoId: true,
-      },
-    });
+  async obtenerResumenModulo(
+    moduloId: string,
+  ) {
+
+    const modulo =
+      await this.prisma.modulo.findUnique({
+        where: {
+          id: moduloId,
+        },
+        select: {
+          id: true,
+          nombre: true,
+          cursoId: true,
+        },
+      });
 
     if (!modulo) {
-      throw new NotFoundException("Módulo no encontrado");
+      throw new NotFoundException(
+        'Módulo no encontrado',
+      );
     }
 
     const leccionesTotales =
@@ -261,29 +277,71 @@ export class ProgresoService {
     };
   }
 
-  private async verificarCursoCompleto(estudianteId: string, cursoId: string): Promise<boolean> {
-    const modulosTotales = await this.prisma.modulo.count({
-      where: { cursoId, estaPublicado: true },
-    });
+  private async verificarCursoCompleto(
+    estudianteId: string,
+    cursoId: string,
+  ): Promise<boolean> {
 
-    if (modulosTotales === 0) return false;
+    const modulosTotales =
+      await this.prisma.modulo.count({
+        where: {
+          cursoId,
+          estaPublicado: true,
+        },
+      });
 
-    const modulosCompletados = await this.prisma.inscripcion.count({
-      where: {
-        estudianteId,
-        modulo: { cursoId, estaPublicado: true },
-        progresoModulo: { estado: 'completado' },
-      },
-    });
+    if (modulosTotales === 0) {
+      return false;
+    }
 
-    const regla = await this.prisma.reglaCertificacionCurso.findUnique({ where: { cursoId } });
-    const porcentajeRequerido = regla?.porcentajeModulosRequerido ?? 100;
-    const porcentajeActual = (modulosCompletados / modulosTotales) * 100;
+    const modulosCompletados =
+      await this.prisma.inscripcion.count({
+        where: {
+          estudianteId,
+          modulo: {
+            cursoId,
+            estaPublicado: true,
+          },
+          progresoModulo: {
+            estado: 'completado',
+          },
+        },
+      });
+
+    const regla =
+      await this.prisma.reglaCertificacionCurso.findUnique({
+        where: {
+          cursoId,
+        },
+      });
+
+    const porcentajeRequerido =
+      regla?.porcentajeModulosRequerido ?? 100;
+
+    const porcentajeActual =
+      (modulosCompletados / modulosTotales) * 100;
 
     await this.prisma.progresoCurso.upsert({
-      where: { cursoId_estudianteId: { cursoId, estudianteId } },
-      update: { modulosTotales, modulosCompletados, porcentaje: porcentajeActual },
-      create: { cursoId, estudianteId, modulosTotales, modulosCompletados, porcentaje: porcentajeActual },
+      where: {
+        cursoId_estudianteId: {
+          cursoId,
+          estudianteId,
+        },
+      },
+
+      update: {
+        modulosTotales,
+        modulosCompletados,
+        porcentaje: porcentajeActual,
+      },
+
+      create: {
+        cursoId,
+        estudianteId,
+        modulosTotales,
+        modulosCompletados,
+        porcentaje: porcentajeActual,
+      },
     });
 
     return porcentajeActual >= porcentajeRequerido;

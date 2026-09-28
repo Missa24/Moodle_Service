@@ -460,29 +460,70 @@ export class CertificadoService {
     };
   }
 
-  async emitirCertificadoModulo(inscripcionId: string) {
-    const inscripcion = await this.prisma.inscripcion.findUnique({
-      where: {
-        id: inscripcionId,
-      },
-      include: {
-        estudiante: {
-          include: {
-            perfil: true,
-          },
-        },
-        modulo: {
-          include: {
-            curso: true,
-          },
-        },
-      },
-    });
+  async emitirCertificadoModulo(
+    inscripcionId: string,
+    usuarioId: string,
+    nombreCertificado: string,
+  ) {
+    const nombre = nombreCertificado?.trim();
 
-    if (!inscripcion) {
-      throw new NotFoundException('Inscripción no encontrada');
+    if (!nombre) {
+      throw new BadRequestException(
+        'El nombre para el certificado es obligatorio',
+      );
     }
 
+    const inscripcion =
+      await this.prisma.inscripcion.findUnique({
+        where: {
+          id: inscripcionId,
+        },
+        include: {
+          estudiante: {
+            include: {
+              perfil: true,
+            },
+          },
+          modulo: {
+            include: {
+              curso: true,
+            },
+          },
+          progresoModulo: true,
+        },
+      });
+
+    if (!inscripcion) {
+      throw new NotFoundException(
+        'Inscripción no encontrada',
+      );
+    }
+
+    // El usuario solo puede emitir sus propios certificados
+    if (inscripcion.estudianteId !== usuarioId) {
+      throw new BadRequestException(
+        'No puedes emitir el certificado de otra persona',
+      );
+    }
+
+    // El módulo debe otorgar certificación
+    if (!inscripcion.modulo.otorgaCertificacion) {
+      throw new BadRequestException(
+        'Este módulo no otorga certificado',
+      );
+    }
+
+    // El módulo debe estar completado
+    if (
+      inscripcion.progresoModulo?.estado !==
+      'completado'
+    ) {
+      throw new BadRequestException(
+        'El módulo todavía no ha sido completado',
+      );
+    }
+
+    // Evitar emitir dos veces
     const certificadoExistente =
       await this.prisma.certificado.findUnique({
         where: {
@@ -510,28 +551,43 @@ export class CertificadoService {
           usuarioId: inscripcion.estudianteId,
           inscripcionId: inscripcion.id,
           cursoId: null,
+
           codigoVerificacion,
           numeroCertificado,
-          titulo: `Certificado de participación - ${inscripcion.modulo.nombre}`,
+
+          nombreCertificado: nombre,
+
+          titulo:
+            `Certificado de participación - ${inscripcion.modulo.nombre}`,
+
           fechaEmision: new Date(),
+
           estado: 'emitido',
-          urlVerificacion: `${frontendUrl}/verificar/${codigoVerificacion}`,
+
+          urlVerificacion:
+            `${frontendUrl}/verificar/${codigoVerificacion}`,
         },
       });
 
     return {
       id: certificado.id,
       tipo: certificado.tipo,
-      nombre:
-        `${inscripcion.estudiante.perfil?.nombre ?? ''} ` +
-        `${inscripcion.estudiante.perfil?.apellidoPaterno ?? ''} ` +
-        `${inscripcion.estudiante.perfil?.apellidoMaterno ?? ''}`.trim(),
+      nombre: certificado.nombreCertificado,
+
       modulo: inscripcion.modulo.nombre,
       curso: inscripcion.modulo.curso.nombre,
+
       fecha: certificado.fechaEmision,
-      codigoVerificacion: certificado.codigoVerificacion,
-      numeroCertificado: certificado.numeroCertificado,
-      urlVerificacion: certificado.urlVerificacion,
+
+      codigoVerificacion:
+        certificado.codigoVerificacion,
+
+      numeroCertificado:
+        certificado.numeroCertificado,
+
+      urlVerificacion:
+        certificado.urlVerificacion,
+
       titulo: certificado.titulo,
     };
   }
@@ -539,7 +595,61 @@ export class CertificadoService {
   async verificarYEmitirCertificadoCurso(
     estudianteId: string,
     cursoId: string,
+    nombreCertificado: string,
   ) {
+    const nombre = nombreCertificado?.trim();
+
+    if (!nombre) {
+      throw new BadRequestException(
+        'El nombre para el certificado es obligatorio',
+      );
+    }
+
+    const curso =
+      await this.prisma.curso.findUnique({
+        where: {
+          id: cursoId,
+        },
+        include: {
+          reglaCertificacion: true,
+        },
+      });
+
+    if (!curso) {
+      throw new NotFoundException(
+        'Curso no encontrado',
+      );
+    }
+
+    const progresoCurso =
+      await this.prisma.progresoCurso.findUnique({
+        where: {
+          cursoId_estudianteId: {
+            cursoId,
+            estudianteId,
+          },
+        },
+      });
+
+    if (!progresoCurso) {
+      throw new BadRequestException(
+        'No existe progreso para este curso',
+      );
+    }
+
+    const porcentajeRequerido =
+      curso.reglaCertificacion
+        ?.porcentajeModulosRequerido ?? 100;
+
+    if (
+      progresoCurso.porcentaje <
+      porcentajeRequerido
+    ) {
+      throw new BadRequestException(
+        `El curso todavía no cumple el porcentaje requerido para obtener el certificado (${porcentajeRequerido}%)`,
+      );
+    }
+
     const certificadoExistente =
       await this.prisma.certificado.findFirst({
         where: {
@@ -559,18 +669,30 @@ export class CertificadoService {
     const numeroCertificado =
       this.generarNumeroCertificado();
 
+    const frontendUrl =
+      process.env.FRONTEND_URL;
+
     return this.prisma.certificado.create({
       data: {
         tipo: 'curso',
         usuarioId: estudianteId,
         inscripcionId: null,
         cursoId,
+
         codigoVerificacion,
         numeroCertificado,
-        titulo: 'Certificado de aprobación del curso',
+
+        nombreCertificado: nombre,
+
+        titulo:
+          'Certificado de aprobación del curso',
+
         fechaEmision: new Date(),
+
         estado: 'emitido',
-        urlVerificacion: `http://localhost:5173/verificar/${codigoVerificacion}`,
+
+        urlVerificacion:
+          `${frontendUrl}/verificar/${codigoVerificacion}`,
       },
     });
   }
@@ -586,14 +708,6 @@ export class CertificadoService {
             id: true,
             username: true,
             correo: true,
-            perfil: {
-              select: {
-                nombre: true,
-                apellidoPaterno: true,
-                apellidoMaterno: true,
-                numeroDocumento: true,
-              },
-            },
           },
         },
         curso: {
@@ -635,13 +749,7 @@ export class CertificadoService {
       );
     }
 
-    const nombre = [
-      certificado.usuario.perfil?.nombre,
-      certificado.usuario.perfil?.apellidoPaterno,
-      certificado.usuario.perfil?.apellidoMaterno,
-    ]
-      .filter(Boolean)
-      .join(' ');
+    const nombre = certificado.nombreCertificado;
 
     let pdfData:
       | CertificadoPdfData
@@ -652,17 +760,24 @@ export class CertificadoService {
         id: certificado.id,
         tipo: 'modulo',
         nombre,
+
         modulo:
           certificado.inscripcion?.modulo?.nombre ?? '',
+
         curso:
           certificado.curso?.nombre ?? '',
+
         fecha: certificado.fechaEmision,
+
         codigoVerificacion:
           certificado.codigoVerificacion,
+
         numeroCertificado:
           certificado.numeroCertificado,
+
         urlVerificacion:
           certificado.urlVerificacion ?? '',
+
         titulo: certificado.titulo,
       };
     } else {
@@ -676,18 +791,26 @@ export class CertificadoService {
         id: certificado.id,
         tipo: 'curso',
         nombre,
+
         curso:
           certificado.curso?.nombre ?? '',
+
         fecha: certificado.fechaEmision,
+
         codigoVerificacion:
           certificado.codigoVerificacion,
+
         numeroCertificado:
           certificado.numeroCertificado,
+
         urlVerificacion:
           certificado.urlVerificacion ?? '',
+
         titulo:
           certificado.curso?.nombre ?? '',
+
         resumen,
+
         cargaHoraria:
           certificado.curso?.duracionHoras?.toString() ?? '',
       };
@@ -708,24 +831,66 @@ export class CertificadoService {
     usuarioId: string,
     buscar?: string,
   ) {
-    const busqueda =
-      buscar?.trim();
+    const busqueda = buscar?.trim();
 
-    const where: Prisma.CertificadoWhereInput = {
-      usuarioId,
-      ...(busqueda
-        ? {
-          titulo: {
-            contains: busqueda,
-            mode: 'insensitive' as const,
+    // ============================================================
+    // PERFIL DEL USUARIO
+    // ============================================================
+
+    const usuario =
+      await this.prisma.usuario.findUnique({
+        where: {
+          id: usuarioId,
+        },
+        select: {
+          perfil: {
+            select: {
+              nombre: true,
+              apellidoPaterno: true,
+              apellidoMaterno: true,
+            },
           },
-        }
-        : {}),
-    };
+        },
+      });
+
+    const nombreSugerido = usuario?.perfil
+      ? [
+        usuario.perfil.nombre,
+        usuario.perfil.apellidoPaterno,
+        usuario.perfil.apellidoMaterno,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .trim()
+      : '';
+
+    // ============================================================
+    // CERTIFICADOS YA EMITIDOS
+    // ============================================================
 
     const certificados =
       await this.prisma.certificado.findMany({
-        where,
+        where: {
+          usuarioId,
+          ...(busqueda
+            ? {
+              OR: [
+                {
+                  titulo: {
+                    contains: busqueda,
+                    mode: 'insensitive',
+                  },
+                },
+                {
+                  nombreCertificado: {
+                    contains: busqueda,
+                    mode: 'insensitive',
+                  },
+                },
+              ],
+            }
+            : {}),
+        },
         orderBy: {
           fechaEmision: 'desc',
         },
@@ -751,13 +916,223 @@ export class CertificadoService {
         },
       });
 
-    return Promise.all(
-      certificados.map((certificado) =>
-        this.mapearCertificadoResumen(certificado),
-      ),
-    );
-  }
+    const certificadosMapeados =
+      await Promise.all(
+        certificados.map((certificado) =>
+          this.mapearCertificadoResumen(
+            certificado,
+          ),
+        ),
+      );
 
+    const inscripcionesPendientes =
+      await this.prisma.inscripcion.findMany({
+        where: {
+          estudianteId: usuarioId,
+
+          modulo: {
+            otorgaCertificacion: true,
+
+            ...(busqueda
+              ? {
+                nombre: {
+                  contains: busqueda,
+                  mode: 'insensitive',
+                },
+              }
+              : {}),
+          },
+
+          progresoModulo: {
+            estado: 'completado',
+          },
+
+          certificado: null,
+        },
+        select: {
+          id: true,
+
+          modulo: {
+            select: {
+              id: true,
+              nombre: true,
+              cursoId: true,
+              curso: {
+                select: {
+                  id: true,
+                  nombre: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+    const modulosPendientes =
+      inscripcionesPendientes.map(
+        (inscripcion) => ({
+          idCertificado: null,
+
+          idInscripcion:
+            inscripcion.id,
+
+          idModulo:
+            inscripcion.modulo.id,
+
+          idUsuario:
+            usuarioId,
+
+          idCurso:
+            inscripcion.modulo.cursoId,
+
+          nombre:
+            inscripcion.modulo.nombre,
+
+          nombreCertificado:
+            null,
+
+          nombreSugerido:
+            nombreSugerido || null,
+
+          descripcion:
+            `Certificado de participación otorgado por haber completado el módulo de ${inscripcion.modulo.nombre}.`,
+
+          tipo: 'modulo',
+
+          estado: 'pendiente_emision',
+
+          fechaEmision: null,
+
+          numeroCertificado: null,
+        }),
+      );
+
+    const progresosCursos =
+      await this.prisma.progresoCurso.findMany({
+        where: {
+          estudianteId: usuarioId,
+        },
+        select: {
+          cursoId: true,
+          porcentaje: true,
+
+          curso: {
+            select: {
+              id: true,
+              nombre: true,
+
+              reglaCertificacion: {
+                select: {
+                  porcentajeModulosRequerido: true,
+                  estado: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+    const certificadosCursos =
+      await this.prisma.certificado.findMany({
+        where: {
+          usuarioId,
+          tipo: 'curso',
+        },
+        select: {
+          cursoId: true,
+        },
+      });
+
+    const cursosConCertificado =
+      new Set(
+        certificadosCursos
+          .map((certificado) => certificado.cursoId)
+          .filter(
+            (cursoId): cursoId is string =>
+              cursoId !== null,
+          ),
+      );
+
+    const cursosPendientes =
+      progresosCursos
+        .filter((progreso) => {
+          const regla =
+            progreso.curso.reglaCertificacion;
+
+          const porcentajeRequerido =
+            regla?.porcentajeModulosRequerido ??
+            100;
+
+          const reglaActiva =
+            !regla ||
+            regla.estado === 'activa';
+
+          const cumple =
+            progreso.porcentaje >=
+            porcentajeRequerido;
+
+          const noTieneCertificado =
+            !cursosConCertificado.has(
+              progreso.cursoId,
+            );
+
+          return (
+            reglaActiva &&
+            cumple &&
+            noTieneCertificado
+          );
+        })
+        .filter((progreso) => {
+          if (!busqueda) {
+            return true;
+          }
+
+          return progreso.curso.nombre
+            .toLowerCase()
+            .includes(
+              busqueda.toLowerCase(),
+            );
+        })
+        .map((progreso) => ({
+          idCertificado: null,
+
+          idInscripcion: null,
+
+          idModulo: null,
+
+          idUsuario:
+            usuarioId,
+
+          idCurso:
+            progreso.cursoId,
+
+          nombre:
+            progreso.curso.nombre,
+
+          nombreCertificado:
+            null,
+
+          nombreSugerido:
+            nombreSugerido || null,
+
+          descripcion:
+            'Certificado otorgado por haber completado el curso.',
+
+          tipo: 'curso',
+
+          estado: 'pendiente_emision',
+
+          fechaEmision: null,
+
+          numeroCertificado: null,
+        }));
+
+    return [
+      ...modulosPendientes,
+      ...cursosPendientes,
+      ...certificadosMapeados,
+    ];
+  }
   private async mapearCertificadoResumen(
     certificado: CertificadoConRelaciones,
   ) {
@@ -785,7 +1160,9 @@ export class CertificadoService {
       idModulo: certificado.inscripcion?.modulo?.id ?? null,
       idUsuario: certificado.usuarioId,
       idCurso: cursoId,
+
       nombre,
+
       descripcion,
       tipo: certificado.tipo,
       estado: certificado.estado,
@@ -858,15 +1235,8 @@ export class CertificadoService {
         include: {
           usuario: {
             select: {
-              perfil: {
-                select: {
-                  nombre: true,
-                  apellidoPaterno: true,
-                  apellidoMaterno: true,
-                  tipoDocumentoIdentidad: true,
-                  numeroDocumento: true,
-                },
-              },
+              id: true,
+              username: true,
             },
           },
           curso: {
@@ -909,17 +1279,6 @@ export class CertificadoService {
       );
     }
 
-    const perfil =
-      certificado.usuario.perfil;
-
-    const nombreCompleto = [
-      perfil?.nombre,
-      perfil?.apellidoPaterno,
-      perfil?.apellidoMaterno,
-    ]
-      .filter(Boolean)
-      .join(' ');
-
     const curso =
       certificado.curso ??
       certificado.inscripcion?.modulo?.curso ??
@@ -928,48 +1287,64 @@ export class CertificadoService {
     return {
       valido:
         certificado.estado === 'emitido',
+
       certificado: {
         id: certificado.id,
+
         codigoVerificacion:
           certificado.codigoVerificacion,
+
         numeroCertificado:
           certificado.numeroCertificado,
-        titulo: certificado.titulo,
-        tipo: certificado.tipo,
-        estado: certificado.estado,
+
+        titulo:
+          certificado.titulo,
+
+        tipo:
+          certificado.tipo,
+
+        estado:
+          certificado.estado,
+
         fechaEmision:
           certificado.fechaEmision,
+
         estudiante: {
-          nombreCompleto,
-          nombre:
-            perfil?.nombre ?? null,
-          apellidoPaterno:
-            perfil?.apellidoPaterno ?? null,
-          apellidoMaterno:
-            perfil?.apellidoMaterno ?? null,
-          tipoDocumentoIdentidad:
-            perfil?.tipoDocumentoIdentidad ?? null,
-          numeroDocumento:
-            perfil?.numeroDocumento ?? null,
+          nombreCompleto:
+            certificado.nombreCertificado,
+
+          nombre: null,
+          apellidoPaterno: null,
+          apellidoMaterno: null,
+          tipoDocumentoIdentidad: null,
+          numeroDocumento: null,
         },
+
         curso,
+
         modulo:
           certificado.inscripcion?.modulo
             ? {
-              id: certificado.inscripcion.modulo.id,
+              id:
+                certificado.inscripcion.modulo.id,
+
               nombre:
                 certificado.inscripcion.modulo.nombre,
+
               cursoId:
                 certificado.inscripcion.modulo.cursoId,
             }
             : null,
+
         inscripcion:
           certificado.inscripcion
             ? {
               numeroInscripcion:
                 certificado.inscripcion.numeroInscripcion,
+
               fechaInscripcion:
                 certificado.inscripcion.fechaInscripcion,
+
               fechaFinalizacion:
                 certificado.inscripcion.fechaFinalizacion,
             }

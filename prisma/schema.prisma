@@ -509,6 +509,7 @@ model Certificado {
   plantillaId        String?
   codigoVerificacion String                @unique
   numeroCertificado  String                @unique
+  nombreCertificado  String?
   titulo             String
   fechaEmision       DateTime              @default(now())
   rutaPdf            String?
