@@ -1,46 +1,68 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
-  Delete,
-  Query,
+  Controller,
   DefaultValuePipe,
-  ParseIntPipe,
-  UseGuards,
+  Delete,
+  Get,
+  Param,
   ParseBoolPipe,
-  UseInterceptors,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
   UploadedFile,
   UploadedFiles,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 
+import {
+  FileFieldsInterceptor,
+  FileInterceptor,
+} from '@nestjs/platform-express';
+
 import { CursoService } from './curso.service';
+
 import { CreateCursoDto } from './dto/create-curso.dto';
 import { UpdateCursoDto } from './dto/update-curso.dto';
+import { ConfigurarVentaCursoDto } from './dto/configurar-venta-curso.dto';
+
 import { PermissionsGuard } from 'src/auth/guards/permission.guard';
 import { Permission } from 'src/auth/enums/permission.enum';
 import { Permissions } from 'src/auth/decorators/permission.decorator';
-import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { Public } from 'src/auth/decorators/public.decorator';
 
 @Controller('curso')
 export class CursoController {
-  constructor(private readonly cursoService: CursoService) { }
+  constructor(
+    private readonly cursoService: CursoService,
+  ) { }
 
   @Post()
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions(Permission.CURSO_CREAR)
+  @UseGuards(
+    JwtAuthGuard,
+    PermissionsGuard,
+  )
+  @Permissions(
+    Permission.CURSO_CREAR,
+  )
   @UseInterceptors(
     FileFieldsInterceptor([
-      { name: 'rutaPortada', maxCount: 1 },
-      { name: 'rutaImagenSecundaria', maxCount: 1 },
+      {
+        name: 'rutaPortada',
+        maxCount: 1,
+      },
+      {
+        name: 'rutaImagenSecundaria',
+        maxCount: 1,
+      },
     ]),
   )
   async create(
-    @Body() createCursoDto: CreateCursoDto,
+    @Body()
+    createCursoDto: CreateCursoDto,
+
     @UploadedFiles()
     files: {
       rutaPortada?: Express.Multer.File[];
@@ -94,55 +116,171 @@ export class CursoController {
   }
 
   @Get('curso-modulos')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions(Permission.CURSO_VER)
+  @UseGuards(
+    JwtAuthGuard,
+    PermissionsGuard,
+  )
+  @Permissions(
+    Permission.CURSO_VER,
+  )
   obtenerCursos() {
     return this.cursoService.obtenerCursos();
   }
 
-  @Get(':id/modulos')
-  findModulos(@Param('id') id: string) {
-    return this.cursoService.findModulos(id);
+  @Public()
+  @Get(':id/precio')
+  obtenerPrecioCurso(
+    @Param('id')
+    id: string,
+  ) {
+    return this.cursoService.obtenerPrecioCurso(
+      id,
+    );
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.cursoService.findOne(id);
+  @Get(':id/configuracion-venta')
+  @UseGuards(
+    JwtAuthGuard,
+    PermissionsGuard,
+  )
+  @Permissions(
+    Permission.CURSO_VER,
+  )
+  obtenerConfiguracionVentaCurso(
+    @Param('id')
+    id: string,
+  ) {
+    return this.cursoService.obtenerConfiguracionVentaCurso(
+      id,
+    );
+  }
+
+  @Patch(':id/configuracion-venta')
+  @UseGuards(
+    JwtAuthGuard,
+    PermissionsGuard,
+  )
+  @Permissions(
+    Permission.CURSO_EDITAR,
+  )
+  @UseInterceptors(
+    FileInterceptor(
+      'qrPagoBolivia',
+    ),
+  )
+  configurarVentaCurso(
+    @Param('id')
+    id: string,
+
+    @Body()
+    dto: ConfigurarVentaCursoDto,
+
+    @UploadedFile()
+    qrPagoBolivia?:
+      Express.Multer.File,
+  ) {
+    return this.cursoService.configurarVentaCurso(
+      id,
+      dto,
+      qrPagoBolivia,
+    );
+  }
+
+  @Get(':id/modulos')
+  findModulos(
+    @Param('id')
+    id: string,
+  ) {
+    return this.cursoService.findModulos(
+      id,
+    );
   }
 
   @Public()
   @Get('slug/:slug')
-  findOneBySlug(@Param('slug') slug: string) {
-    return this.cursoService.findOneBySlug(slug);
+  findOneBySlug(
+    @Param('slug')
+    slug: string,
+  ) {
+    return this.cursoService.findOneBySlug(
+      slug,
+    );
+  }
+
+  @Get(':id')
+  findOne(
+    @Param('id')
+    id: string,
+  ) {
+    return this.cursoService.findOne(
+      id,
+    );
   }
 
   @Patch(':id/imagen')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions(Permission.CURSO_EDITAR)
-  @UseInterceptors(FileInterceptor('imagen'))
+  @UseGuards(
+    JwtAuthGuard,
+    PermissionsGuard,
+  )
+  @Permissions(
+    Permission.CURSO_EDITAR,
+  )
+  @UseInterceptors(
+    FileInterceptor(
+      'imagen',
+    ),
+  )
   async subirImagenCurso(
-    @Param('id') cursoId: string,
-    @UploadedFile() file: Express.Multer.File,
+    @Param('id')
+    cursoId: string,
+
+    @UploadedFile()
+    file:
+      Express.Multer.File,
   ) {
-    return this.cursoService.subirImagenCurso(file, cursoId);
+    return this.cursoService.subirImagenCurso(
+      file,
+      cursoId,
+    );
   }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions(Permission.CURSO_EDITAR)
+  @UseGuards(
+    JwtAuthGuard,
+    PermissionsGuard,
+  )
+  @Permissions(
+    Permission.CURSO_EDITAR,
+  )
   @UseInterceptors(
     FileFieldsInterceptor([
-      { name: 'rutaPortada', maxCount: 1 },
-      { name: 'rutaImagenSecundaria', maxCount: 1 },
+      {
+        name:
+          'rutaPortada',
+        maxCount: 1,
+      },
+      {
+        name:
+          'rutaImagenSecundaria',
+        maxCount: 1,
+      },
     ]),
   )
   update(
-    @Param('id') id: string,
-    @Body() updateCursoDto: UpdateCursoDto,
+    @Param('id')
+    id: string,
+
+    @Body()
+    updateCursoDto:
+      UpdateCursoDto,
+
     @UploadedFiles()
     files: {
-      rutaPortada?: Express.Multer.File[];
-      rutaImagenSecundaria?: Express.Multer.File[];
+      rutaPortada?:
+      Express.Multer.File[];
+
+      rutaImagenSecundaria?:
+      Express.Multer.File[];
     },
   ) {
     return this.cursoService.update(
@@ -154,10 +292,19 @@ export class CursoController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions(Permission.CURSO_ELIMINAR)
-  remove(@Param('id') id: string) {
-    return this.cursoService.remove(id);
+  @UseGuards(
+    JwtAuthGuard,
+    PermissionsGuard,
+  )
+  @Permissions(
+    Permission.CURSO_ELIMINAR,
+  )
+  remove(
+    @Param('id')
+    id: string,
+  ) {
+    return this.cursoService.remove(
+      id,
+    );
   }
-
 }

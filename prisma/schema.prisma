@@ -6,29 +6,71 @@ datasource db {
   provider = "postgresql"
 }
 
+/**
+ * =========================================================
+ * ENUMS
+ * =========================================================
+ */
+
 enum ProveedorOAuth {
   GOOGLE
 }
 
+enum TipoDescuento {
+  PORCENTAJE
+  MONTO_FIJO
+}
+
+enum TipoDescuentoCurso {
+  PORCENTAJE
+  MODULO_GRATIS
+}
+
+enum TipoCompra {
+  MODULO
+  CURSO
+}
+
+enum MedioPago {
+  BOLIVIA
+  PAYPAL
+}
+
+enum EstadoLead {
+  INTERESADO
+  PAGO_COMPLETADO
+  CONVERTIDO
+  DESCARTADO
+}
+
+/**
+ * =========================================================
+ * USUARIOS
+ * =========================================================
+ */
+
 model Usuario {
-  id                 String           @id @default(cuid())
-  username           String           @unique
-  correo             String           @unique
+  id                 String    @id @default(cuid())
+  username           String    @unique
+  correo             String    @unique
   contrasenaHash     String?
-  estado             String           @default("activo")
+  estado             String    @default("activo")
   correoVerificadoEn DateTime?
   ultimoAccesoEn     DateTime?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-  certificados       Certificado[]
-  inscripciones      Inscripcion[]
-  notificaciones     Notificaciones[]
-  perfil             Perfil?
-  progresosCursos    ProgresoCurso[]
-  cuentasOAuth       CuentaOAuth[]
-  roles              UsuarioRol[]
-  leads              Lead[]
-  ventaModulos       VentaModulo[]
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  certificados    Certificado[]
+  inscripciones   Inscripcion[]
+  notificaciones  Notificaciones[]
+  perfil          Perfil?
+  progresosCursos ProgresoCurso[]
+  cuentasOAuth    CuentaOAuth[]
+  roles           UsuarioRol[]
+  leads           Lead[]
+
+  ventaModulos VentaModulo[]
+  ventaCursos  VentaCurso[]
 
   @@map("usuarios")
 }
@@ -53,7 +95,8 @@ model Perfil {
   fotografiaRuta             String?
   creadoEn                   DateTime  @default(now())
   actualizadoEn              DateTime  @updatedAt
-  usuario                    Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
   @@map("perfiles")
 }
@@ -105,8 +148,10 @@ model RolPermiso {
   rolId      String
   permisoId  String
   asignadoEn DateTime @default(now())
-  permiso    Permiso  @relation(fields: [permisoId], references: [id], onDelete: Cascade)
-  rol        Rol      @relation(fields: [rolId], references: [id], onDelete: Cascade)
+
+  permiso Permiso @relation(fields: [permisoId], references: [id], onDelete: Cascade)
+
+  rol Rol @relation(fields: [rolId], references: [id], onDelete: Cascade)
 
   @@id([rolId, permisoId])
   @@map("rol_permisos")
@@ -117,26 +162,30 @@ model UsuarioRol {
   rolId       String
   asignadoPor String?
   asignadoEn  DateTime @default(now())
-  rol         Rol      @relation(fields: [rolId], references: [id], onDelete: Cascade)
-  usuario     Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  rol Rol @relation(fields: [rolId], references: [id], onDelete: Cascade)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
   @@id([usuarioId, rolId])
   @@map("usuario_roles")
 }
 
 model Menu {
-  id            String    @id @default(cuid())
+  id            String   @id @default(cuid())
   nombre        String
   icono         String?
   ruta          String?
   menuPadreId   String?
-  orden         Int       @default(0)
-  estado        String    @default("activo")
-  creadoEn      DateTime  @default(now())
-  actualizadoEn DateTime  @updatedAt
-  menuPadre     Menu?     @relation("MenuJerarquia", fields: [menuPadreId], references: [id])
-  submenus      Menu[]    @relation("MenuJerarquia")
-  roles         RolMenu[]
+  orden         Int      @default(0)
+  estado        String   @default("activo")
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  menuPadre Menu? @relation("MenuJerarquia", fields: [menuPadreId], references: [id])
+
+  submenus Menu[]    @relation("MenuJerarquia")
+  roles    RolMenu[]
 
   @@map("menus")
 }
@@ -144,8 +193,10 @@ model Menu {
 model RolMenu {
   rolId  String
   menuId String
-  menu   Menu   @relation(fields: [menuId], references: [id], onDelete: Cascade)
-  rol    Rol    @relation(fields: [rolId], references: [id], onDelete: Cascade)
+
+  menu Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  rol Rol @relation(fields: [rolId], references: [id], onDelete: Cascade)
 
   @@id([rolId, menuId])
   @@map("rol_menus")
@@ -161,7 +212,8 @@ model Notificaciones {
   estado    String    @default("pendiente")
   leidaEn   DateTime?
   creadoEn  DateTime  @default(now())
-  usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
   @@map("notificaciones")
 }
@@ -172,8 +224,9 @@ model Categoria {
   slug             String  @unique
   categoriaPadreId String?
 
-  categoriaPadre Categoria?  @relation("CategoriaJerarquia", fields: [categoriaPadreId], references: [id])
-  subcategorias  Categoria[] @relation("CategoriaJerarquia")
+  categoriaPadre Categoria? @relation("CategoriaJerarquia", fields: [categoriaPadreId], references: [id])
+
+  subcategorias Categoria[] @relation("CategoriaJerarquia")
 
   cursos        Curso[]
   creadoEn      DateTime @default(now())
@@ -184,51 +237,90 @@ model Categoria {
 }
 
 model Curso {
-  id                   String                   @id @default(cuid())
+  id                   String   @id @default(cuid())
   nombre               String
   categoriaId          String
-  slug                 String                   @unique
+  slug                 String   @unique
   descripcionCorta     String?
   descripcionCompleta  String?
   duracionHoras        Int?
   rutaPortada          String?
   rutaImagenSecundaria String?
-  estado               String                   @default("borrador")
+  estado               String   @default("borrador")
   creadoPor            String?
-  creadoEn             DateTime                 @default(now())
-  actualizadoEn        DateTime                 @updatedAt
-  certificados         Certificado[]
-  modulos              Modulo[]
-  progresosCursos      ProgresoCurso[]
-  reglaCertificacion   ReglaCertificacionCurso?
-  categoria            Categoria                @relation(fields: [categoriaId], references: [id])
+  creadoEn             DateTime @default(now())
+  actualizadoEn        DateTime @updatedAt
+
+  certificados       Certificado[]
+  modulos            Modulo[]
+  progresosCursos    ProgresoCurso[]
+  reglaCertificacion ReglaCertificacionCurso?
+
+  configuracionVenta ConfiguracionVentaCurso?
+
+  leads       Lead[]
+  ventaCursos VentaCurso[]
+
+  categoria Categoria @relation(fields: [categoriaId], references: [id])
 
   @@index([categoriaId])
   @@map("cursos")
 }
 
+model ConfiguracionVentaCurso {
+  id      String @id @default(cuid())
+  cursoId String @unique
+
+  tipoDescuento TipoDescuentoCurso
+
+  porcentaje Decimal? @db.Decimal(5, 2)
+
+  moduloDescuentoId String?
+
+  urlPago             String?
+  urlPagoBolivia      String?
+  publicIdPagoBolivia String?
+  habilitado          Boolean @default(true)
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  curso Curso @relation(fields: [cursoId], references: [id], onDelete: Cascade)
+
+  moduloDescuento Modulo? @relation("ModuloDescuentoCurso", fields: [moduloDescuentoId], references: [id], onDelete: SetNull)
+
+  @@index([moduloDescuentoId])
+  @@map("configuraciones_venta_curso")
+}
+
 model Modulo {
-  id                  String                    @id @default(cuid())
+  id                  String   @id @default(cuid())
   cursoId             String
   nombre              String
   descripcion         String?
   fraseMotivacional   String?
   rutaImagen          String?
-  orden               Int                       @default(0)
-  otorgaCertificacion Boolean                   @default(false)
-  estaPublicado       Boolean                   @default(false)
-  creadoEn            DateTime                  @default(now())
-  actualizadoEn       DateTime                  @updatedAt
-  inscripciones       Inscripcion[]
-  lecciones           Leccion[]
-  curso               Curso                     @relation(fields: [cursoId], references: [id], onDelete: Cascade)
-  reglaCertificacion  ReglaCertificacionModulo?
+  orden               Int      @default(0)
+  otorgaCertificacion Boolean  @default(false)
+  estaPublicado       Boolean  @default(false)
+  creadoEn            DateTime @default(now())
+  actualizadoEn       DateTime @updatedAt
+
+  inscripciones      Inscripcion[]
+  lecciones          Leccion[]
+  reglaCertificacion ReglaCertificacionModulo?
+
+  curso Curso @relation(fields: [cursoId], references: [id], onDelete: Cascade)
 
   precios      Precio[]
   leads        Lead[]
   descuentos   DescuentoModulo[]
   ventaModulos VentaModulo[]
 
+  configuracionesDescuentoCurso ConfiguracionVentaCurso[] @relation("ModuloDescuentoCurso")
+  detallesVentasCurso           VentaCursoDetalle[]       @relation("VentaCursoDetalleModulo")
+
+  @@index([cursoId])
   @@map("modulos")
 }
 
@@ -247,16 +339,6 @@ model Precio {
 
   @@index([moduloId, creadoEn])
   @@map("precios")
-}
-
-enum TipoDescuento {
-  PORCENTAJE
-  MONTO_FIJO
-}
-
-enum MedioPago {
-  BOLIVIA
-  PAYPAL
 }
 
 model Descuento {
@@ -321,16 +403,22 @@ model VentaModulo {
   medioPago  MedioPago
   paisCodigo String?   @db.Char(2)
 
-  referenciaPago String?
-  observaciones  String?
+  referenciaPago          String?
+  observaciones           String?
+  comprobantePagoUrl      String?
+  comprobantePagoPublicId String?
+  comprobantePagoNombre   String?
+  creadoEn                DateTime @default(now())
 
-  creadoEn DateTime @default(now())
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
 
-  usuario     Usuario      @relation(fields: [usuarioId], references: [id])
-  modulo      Modulo       @relation(fields: [moduloId], references: [id])
-  lead        Lead?        @relation(fields: [leadId], references: [id])
+  modulo Modulo @relation(fields: [moduloId], references: [id])
+
+  lead Lead? @relation(fields: [leadId], references: [id])
+
   inscripcion Inscripcion? @relation(fields: [inscripcionId], references: [id])
-  descuento   Descuento?   @relation(fields: [descuentoId], references: [id], onDelete: SetNull)
+
+  descuento Descuento? @relation(fields: [descuentoId], references: [id], onDelete: SetNull)
 
   @@index([usuarioId])
   @@index([moduloId])
@@ -339,8 +427,85 @@ model VentaModulo {
   @@map("ventas_modulos")
 }
 
+model VentaCurso {
+  id String @id @default(cuid())
+
+  usuarioId String
+  cursoId   String
+
+  leadId String? @unique
+
+  precioBase Decimal @db.Decimal(10, 2)
+
+  descuentoTipo TipoDescuentoCurso?
+
+  descuentoValor Decimal? @db.Decimal(10, 2)
+
+  moduloDescuentoId     String?
+  moduloDescuentoNombre String?
+  moduloDescuentoPrecio Decimal? @db.Decimal(10, 2)
+
+  montoDescuento Decimal @default(0) @db.Decimal(10, 2)
+
+  montoCobrado Decimal @db.Decimal(10, 2)
+
+  comision           Decimal @default(0) @db.Decimal(10, 2)
+  comisionConfirmada Boolean @default(false)
+
+  moneda String @db.VarChar(3)
+
+  medioPago  MedioPago
+  paisCodigo String?   @db.Char(2)
+
+  referenciaPago          String?
+  observaciones           String?
+  comprobantePagoUrl      String?
+  comprobantePagoPublicId String?
+  comprobantePagoNombre   String?
+  creadoEn                DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  curso Curso @relation(fields: [cursoId], references: [id])
+
+  lead Lead? @relation(fields: [leadId], references: [id])
+
+  inscripciones Inscripcion[]
+
+  detalles VentaCursoDetalle[]
+
+  @@unique([usuarioId, cursoId])
+  @@index([usuarioId])
+  @@index([cursoId])
+  @@index([creadoEn])
+  @@map("ventas_cursos")
+}
+
+model VentaCursoDetalle {
+  id String @id @default(cuid())
+
+  ventaCursoId String
+  moduloId     String?
+
+  moduloNombre String
+  moduloOrden  Int
+
+  precioModulo Decimal @db.Decimal(10, 2)
+
+  creadoEn DateTime @default(now())
+
+  ventaCurso VentaCurso @relation(fields: [ventaCursoId], references: [id], onDelete: Cascade)
+
+  modulo Modulo? @relation("VentaCursoDetalleModulo", fields: [moduloId], references: [id], onDelete: SetNull)
+
+  @@unique([ventaCursoId, moduloId])
+  @@index([ventaCursoId])
+  @@index([moduloId])
+  @@map("ventas_cursos_detalles")
+}
+
 model Leccion {
-  id                                String             @id @default(cuid())
+  id                                String   @id @default(cuid())
   moduloId                          String
   nombre                            String
   descripcion                       String?
@@ -348,17 +513,21 @@ model Leccion {
   tipoLeccion                       String
   urlVideo                          String?
   proveedorVideo                    String?
-  orden                             Int                @default(0)
-  esVistaPrevia                     Boolean            @default(false)
-  requiereLeccionAnteriorCompletada Boolean            @default(true)
-  estaPublicada                     Boolean            @default(false)
-  creadoEn                          DateTime           @default(now())
-  actualizadoEn                     DateTime           @updatedAt
-  formulario                        FormularioLeccion?
-  modulo                            Modulo             @relation(fields: [moduloId], references: [id], onDelete: Cascade)
-  progresos                         ProgresoLeccion[]
-  recursos                          RecursosLeccion[]
+  orden                             Int      @default(0)
+  esVistaPrevia                     Boolean  @default(false)
+  requiereLeccionAnteriorCompletada Boolean  @default(true)
+  estaPublicada                     Boolean  @default(false)
+  creadoEn                          DateTime @default(now())
+  actualizadoEn                     DateTime @updatedAt
 
+  formulario FormularioLeccion?
+
+  modulo Modulo @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+
+  progresos ProgresoLeccion[]
+  recursos  RecursosLeccion[]
+
+  @@index([moduloId])
   @@map("lecciones")
 }
 
@@ -373,49 +542,67 @@ model RecursosLeccion {
   orden         Int      @default(0)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
-  leccion       Leccion  @relation(fields: [leccionId], references: [id], onDelete: Cascade)
 
+  leccion Leccion @relation(fields: [leccionId], references: [id], onDelete: Cascade)
+
+  @@index([leccionId])
   @@map("recursos_leccion")
 }
 
 model Inscripcion {
-  id                 String            @id @default(cuid())
-  moduloId           String
-  estudianteId       String
-  numeroInscripcion  String            @unique
-  fechaInscripcion   DateTime          @default(now())
-  estado             String            @default("activa")
-  estadoAcceso       String            @default("habilitado")
-  porcentajeAvance   Float             @default(0)
-  fechaFinalizacion  DateTime?
-  observaciones      String?
-  inscritoPor        String?
-  monto              Float             @default(0)
-  creadoEn           DateTime          @default(now())
-  actualizadoEn      DateTime          @updatedAt
-  certificado        Certificado?
-  estudiante         Usuario           @relation(fields: [estudianteId], references: [id], onDelete: Cascade)
-  modulo             Modulo            @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+  id                String    @id @default(cuid())
+  moduloId          String
+  estudianteId      String
+  numeroInscripcion String    @unique
+  fechaInscripcion  DateTime  @default(now())
+  estado            String    @default("activa")
+  estadoAcceso      String    @default("habilitado")
+  porcentajeAvance  Float     @default(0)
+  fechaFinalizacion DateTime?
+  observaciones     String?
+  inscritoPor       String?
+  monto             Float     @default(0)
+
+  ventaCursoId String?
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  certificado Certificado?
+
+  estudiante Usuario @relation(fields: [estudianteId], references: [id], onDelete: Cascade)
+
+  modulo Modulo @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+
   progresosLecciones ProgresoLeccion[]
   progresoModulo     ProgresoModulo?
-  ventaModulo        VentaModulo?
 
+  ventaModulo VentaModulo?
+
+  ventaCurso VentaCurso? @relation(fields: [ventaCursoId], references: [id], onDelete: SetNull)
+
+  @@unique([moduloId, estudianteId])
+  @@index([estudianteId])
+  @@index([ventaCursoId])
   @@map("inscripciones")
-}
-
-enum EstadoLead {
-  INTERESADO
-  PAGO_COMPLETADO
-  CONVERTIDO
-  DESCARTADO
 }
 
 model Lead {
   id        String @id @default(cuid())
   usuarioId String
-  moduloId  String
+
+  tipoCompra TipoCompra @default(MODULO)
+
+  moduloId String?
+  cursoId  String?
 
   estado EstadoLead @default(INTERESADO)
+
+  referenciaPago          String?
+  comprobantePagoUrl      String?
+  comprobantePagoPublicId String?
+  comprobantePagoNombre   String?
+  comprobantePagoSubidoEn DateTime?
 
   creadoEn        DateTime  @default(now())
   actualizadoEn   DateTime  @updatedAt
@@ -423,47 +610,57 @@ model Lead {
   convertidoEn    DateTime?
 
   usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  modulo  Modulo? @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+  curso   Curso?  @relation(fields: [cursoId], references: [id], onDelete: Cascade)
 
-  modulo      Modulo       @relation(fields: [moduloId], references: [id], onDelete: Cascade)
   ventaModulo VentaModulo?
+  ventaCurso  VentaCurso?
 
   @@unique([usuarioId, moduloId])
+  @@unique([usuarioId, cursoId])
   @@index([usuarioId])
   @@index([moduloId])
+  @@index([cursoId])
+  @@index([tipoCompra])
   @@index([estado])
   @@map("leads")
 }
 
 model ProgresoLeccion {
-  id                   String                @id @default(cuid())
+  id                   String    @id @default(cuid())
   inscripcionId        String
   leccionId            String
-  estado               String                @default("bloqueada")
-  porcentaje           Float                 @default(0)
-  segundosVisualizados Int                   @default(0)
+  estado               String    @default("bloqueada")
+  porcentaje           Float     @default(0)
+  segundosVisualizados Int       @default(0)
   iniciadoEn           DateTime?
   desbloqueadoEn       DateTime?
   ultimoAccesoEn       DateTime?
   completadoEn         DateTime?
-  actualizadoEn        DateTime              @updatedAt
-  inscripcion          Inscripcion           @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
-  leccion              Leccion               @relation(fields: [leccionId], references: [id], onDelete: Cascade)
+  actualizadoEn        DateTime  @updatedAt
+
+  inscripcion Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
+
+  leccion Leccion @relation(fields: [leccionId], references: [id], onDelete: Cascade)
+
   respuestasFormulario RespuestaFormulario[]
 
   @@unique([inscripcionId, leccionId])
+  @@index([leccionId])
   @@map("progreso_lecciones")
 }
 
 model ProgresoModulo {
-  id                   String      @id @default(cuid())
-  inscripcionId        String      @unique
-  estado               String      @default("en_progreso")
-  porcentaje           Float       @default(0)
-  leccionesTotales     Int         @default(0)
-  leccionesCompletadas Int         @default(0)
+  id                   String    @id @default(cuid())
+  inscripcionId        String    @unique
+  estado               String    @default("en_progreso")
+  porcentaje           Float     @default(0)
+  leccionesTotales     Int       @default(0)
+  leccionesCompletadas Int       @default(0)
   completadoEn         DateTime?
-  actualizadoEn        DateTime    @updatedAt
-  inscripcion          Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
+  actualizadoEn        DateTime  @updatedAt
+
+  inscripcion Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
 
   @@map("progreso_modulos")
 }
@@ -479,8 +676,10 @@ model ProgresoCurso {
   ultimoAccesoEn     DateTime?
   completadoEn       DateTime?
   actualizadoEn      DateTime  @updatedAt
-  curso              Curso     @relation(fields: [cursoId], references: [id], onDelete: Cascade)
-  estudiante         Usuario   @relation(fields: [estudianteId], references: [id], onDelete: Cascade)
+
+  curso Curso @relation(fields: [cursoId], references: [id], onDelete: Cascade)
+
+  estudiante Usuario @relation(fields: [estudianteId], references: [id], onDelete: Cascade)
 
   @@unique([cursoId, estudianteId])
   @@map("progreso_cursos")
@@ -501,31 +700,35 @@ model PlantillaCertificado {
 }
 
 model Certificado {
-  id                 String                @id @default(cuid())
+  id                 String    @id @default(cuid())
   tipo               String
   usuarioId          String
-  inscripcionId      String?               @unique
+  inscripcionId      String?   @unique
   cursoId            String?
   plantillaId        String?
-  codigoVerificacion String                @unique
-  numeroCertificado  String                @unique
+  codigoVerificacion String    @unique
+  numeroCertificado  String    @unique
   nombreCertificado  String?
   titulo             String
-  fechaEmision       DateTime              @default(now())
+  fechaEmision       DateTime  @default(now())
   rutaPdf            String?
   urlVerificacion    String?
   hashVerificacion   String?
-  estado             String                @default("emitido")
-  intentos           Int                   @default(0)
+  estado             String    @default("emitido")
+  intentos           Int       @default(0)
   emitidoPor         String?
   anuladoEn          DateTime?
   motivoAnulacion    String?
-  creadoEn           DateTime              @default(now())
-  actualizadoEn      DateTime              @updatedAt
-  curso              Curso?                @relation(fields: [cursoId], references: [id], onDelete: Cascade)
-  inscripcion        Inscripcion?          @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
-  plantilla          PlantillaCertificado? @relation(fields: [plantillaId], references: [id])
-  usuario            Usuario               @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  creadoEn           DateTime  @default(now())
+  actualizadoEn      DateTime  @updatedAt
+
+  curso Curso? @relation(fields: [cursoId], references: [id], onDelete: Cascade)
+
+  inscripcion Inscripcion? @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
+
+  plantilla PlantillaCertificado? @relation(fields: [plantillaId], references: [id])
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
   @@unique([usuarioId, cursoId])
   @@map("certificados")
@@ -538,7 +741,8 @@ model ReglaCertificacionModulo {
   estado                       String   @default("activa")
   creadoEn                     DateTime @default(now())
   actualizadoEn                DateTime @updatedAt
-  modulo                       Modulo   @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+
+  modulo Modulo @relation(fields: [moduloId], references: [id], onDelete: Cascade)
 
   @@map("reglas_certificacion_modulo")
 }
@@ -550,60 +754,75 @@ model ReglaCertificacionCurso {
   estado                     String   @default("activa")
   creadoEn                   DateTime @default(now())
   actualizadoEn              DateTime @updatedAt
-  curso                      Curso    @relation(fields: [cursoId], references: [id], onDelete: Cascade)
+
+  curso Curso @relation(fields: [cursoId], references: [id], onDelete: Cascade)
 
   @@map("reglas_certificacion_curso")
 }
 
 model FormularioLeccion {
-  id            String               @id @default(cuid())
-  leccionId     String               @unique
+  id            String   @id @default(cuid())
+  leccionId     String   @unique
   titulo        String
-  estado        String               @default("activo")
-  creadoEn      DateTime             @default(now())
-  actualizadoEn DateTime             @updatedAt
-  leccion       Leccion              @relation(fields: [leccionId], references: [id], onDelete: Cascade)
-  preguntas     PreguntaFormulario[]
+  estado        String   @default("activo")
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  leccion Leccion @relation(fields: [leccionId], references: [id], onDelete: Cascade)
+
+  preguntas PreguntaFormulario[]
 
   @@map("formularios_leccion")
 }
 
 model PreguntaFormulario {
-  id           String                @id @default(cuid())
+  id           String   @id @default(cuid())
   formularioId String
   enunciado    String
-  tipoPregunta String                @default("opcion_unica")
-  orden        Int                   @default(0)
-  creadoEn     DateTime              @default(now())
-  opciones     OpcionFormulario[]
-  formulario   FormularioLeccion     @relation(fields: [formularioId], references: [id], onDelete: Cascade)
-  respuestas   RespuestaFormulario[]
+  tipoPregunta String   @default("opcion_unica")
+  orden        Int      @default(0)
+  creadoEn     DateTime @default(now())
 
+  opciones OpcionFormulario[]
+
+  formulario FormularioLeccion @relation(fields: [formularioId], references: [id], onDelete: Cascade)
+
+  respuestas RespuestaFormulario[]
+
+  @@index([formularioId])
   @@map("preguntas_formulario")
 }
 
 model OpcionFormulario {
-  id                   String                @id @default(cuid())
+  id                   String  @id @default(cuid())
   preguntaFormularioId String
   texto                String
-  esCorrecta           Boolean               @default(false)
-  orden                Int                   @default(0)
-  pregunta             PreguntaFormulario    @relation(fields: [preguntaFormularioId], references: [id], onDelete: Cascade)
-  respuestas           RespuestaFormulario[]
+  esCorrecta           Boolean @default(false)
+  orden                Int     @default(0)
 
+  pregunta PreguntaFormulario @relation(fields: [preguntaFormularioId], references: [id], onDelete: Cascade)
+
+  respuestas RespuestaFormulario[]
+
+  @@index([preguntaFormularioId])
   @@map("opciones_formulario")
 }
 
 model RespuestaFormulario {
-  id                   String             @id @default(cuid())
+  id                   String   @id @default(cuid())
   progresoLeccionId    String
   preguntaFormularioId String
   opcionFormularioId   String?
-  esCorrecta           Boolean            @default(false)
-  respondidoEn         DateTime           @default(now())
-  opcion               OpcionFormulario?  @relation(fields: [opcionFormularioId], references: [id])
-  pregunta             PreguntaFormulario @relation(fields: [preguntaFormularioId], references: [id], onDelete: Cascade)
-  progresoLeccion      ProgresoLeccion    @relation(fields: [progresoLeccionId], references: [id], onDelete: Cascade)
+  esCorrecta           Boolean  @default(false)
+  respondidoEn         DateTime @default(now())
 
+  opcion OpcionFormulario? @relation(fields: [opcionFormularioId], references: [id])
+
+  pregunta PreguntaFormulario @relation(fields: [preguntaFormularioId], references: [id], onDelete: Cascade)
+
+  progresoLeccion ProgresoLeccion @relation(fields: [progresoLeccionId], references: [id], onDelete: Cascade)
+
+  @@index([progresoLeccionId])
+  @@index([preguntaFormularioId])
   @@map("respuestas_formulario")
 }

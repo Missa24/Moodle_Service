@@ -3,12 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-
-import {
-  MedioPago,
-  Prisma,
-} from '@prisma/client';
-
+import { MedioPago, Prisma, TipoCompra } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 const ventaInclude = {
@@ -32,26 +27,11 @@ const ventaInclude = {
     select: {
       id: true,
       nombre: true,
-      curso: {
-        select: {
-          id: true,
-          nombre: true,
-        },
-      },
+      curso: { select: { id: true, nombre: true } },
     },
   },
-  descuento: {
-    select: {
-      id: true,
-      nombre: true,
-    },
-  },
-  lead: {
-    select: {
-      id: true,
-      estado: true,
-    },
-  },
+  descuento: { select: { id: true, nombre: true } },
+  lead: { select: { id: true, estado: true } },
   inscripcion: {
     select: {
       id: true,
@@ -61,10 +41,9 @@ const ventaInclude = {
   },
 } satisfies Prisma.VentaModuloInclude;
 
-type VentaConRelaciones =
-  Prisma.VentaModuloGetPayload<{
-    include: typeof ventaInclude;
-  }>;
+type VentaConRelaciones = Prisma.VentaModuloGetPayload<{
+  include: typeof ventaInclude;
+}>;
 
 type RegistrarVentaDesdeLeadInput = {
   medioPago: MedioPago;
@@ -72,6 +51,9 @@ type RegistrarVentaDesdeLeadInput = {
   referenciaPago?: string;
   observaciones?: string;
   inscripcionId?: string;
+  comprobantePagoUrl?: string;
+  comprobantePagoPublicId?: string;
+  comprobantePagoNombre?: string;
 };
 
 type FiltrosVentas = {
@@ -84,37 +66,27 @@ type FiltrosVentas = {
   hasta?: string;
 };
 
+type VentaDbClient = Pick<
+  Prisma.TransactionClient,
+  'lead' | 'precio' | 'descuento' | 'ventaModulo'
+>;
+
 @Injectable()
 export class VentasService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) { }
+  constructor(private readonly prisma: PrismaService) { }
 
   private redondear(valor: number) {
-    return Math.round(
-      (valor + Number.EPSILON) * 100,
-    ) / 100;
+    return Math.round((valor + Number.EPSILON) * 100) / 100;
   }
 
-  private formatearVenta(
-    venta: VentaConRelaciones,
-  ) {
-    const precioBase =
-      Number(venta.precioBase);
-
+  private formatearVenta(venta: VentaConRelaciones) {
+    const precioBase = Number(venta.precioBase);
     const descuentoValor =
-      venta.descuentoValor !== null
-        ? Number(venta.descuentoValor)
-        : null;
+      venta.descuentoValor !== null ? Number(venta.descuentoValor) : null;
 
-    const montoDescuento =
-      Number(venta.montoDescuento);
-
-    const montoCobrado =
-      Number(venta.montoCobrado);
-
-    const comision =
-      Number(venta.comision);
+    const montoDescuento = Number(venta.montoDescuento);
+    const montoCobrado = Number(venta.montoCobrado);
+    const comision = Number(venta.comision);
 
     return {
       ...venta,
@@ -123,10 +95,7 @@ export class VentasService {
       montoDescuento,
       montoCobrado,
       comision,
-      totalRecibido:
-        this.redondear(
-          montoCobrado - comision,
-        ),
+      totalRecibido: this.redondear(montoCobrado - comision),
     };
   }
 
@@ -135,32 +104,30 @@ export class VentasService {
     data: RegistrarVentaDesdeLeadInput,
     tx?: Prisma.TransactionClient,
   ) {
-    const db = tx ?? this.prisma;
+    const db: VentaDbClient = tx ?? this.prisma;
 
-    const lead =
-      await db.lead.findUnique({
-        where: {
-          id: leadId,
-        },
-        include: {
-          ventaModulo: true,
-          usuario: {
-            include: {
-              perfil: true,
-            },
-          },
-          modulo: {
-            select: {
-              id: true,
-              nombre: true,
-            },
-          },
-        },
-      });
+    const lead = await db.lead.findUnique({
+      where: { id: leadId },
+      include: {
+        ventaModulo: true,
+        usuario: { include: { perfil: true } },
+        modulo: { select: { id: true, nombre: true } },
+      },
+    });
 
     if (!lead) {
-      throw new NotFoundException(
-        'Lead no encontrado',
+      throw new NotFoundException('Lead no encontrado');
+    }
+
+    if (lead.tipoCompra !== TipoCompra.MODULO) {
+      throw new BadRequestException(
+        'Este lead no corresponde a una compra de módulo',
+      );
+    }
+
+    if (!lead.moduloId || !lead.modulo) {
+      throw new BadRequestException(
+        'El lead no tiene un módulo asociado',
       );
     }
 
@@ -170,16 +137,12 @@ export class VentasService {
       );
     }
 
-    const precio =
-      await db.precio.findFirst({
-        where: {
-          moduloId:
-            lead.moduloId,
-        },
-        orderBy: {
-          creadoEn: 'desc',
-        },
-      });
+    const moduloId = lead.moduloId;
+
+    const precio = await db.precio.findFirst({
+      where: { moduloId },
+      orderBy: { creadoEn: 'desc' },
+    });
 
     if (!precio) {
       throw new BadRequestException(
@@ -189,80 +152,42 @@ export class VentasService {
 
     const ahora = new Date();
 
-    const descuento =
-      await db.descuento.findFirst({
-        where: {
-          habilitado: true,
-          iniciaEn: {
-            lte: ahora,
-          },
-          finalizaEn: {
-            gte: ahora,
-          },
-          modulos: {
-            some: {
-              moduloId:
-                lead.moduloId,
-            },
-          },
-        },
-        orderBy: {
-          iniciaEn: 'desc',
-        },
-      });
+    const descuento = await db.descuento.findFirst({
+      where: {
+        habilitado: true,
+        iniciaEn: { lte: ahora },
+        finalizaEn: { gte: ahora },
+        modulos: { some: { moduloId } },
+      },
+      orderBy: { iniciaEn: 'desc' },
+    });
 
-    const precioBase =
-      Number(precio.costo);
-
+    const precioBase = Number(precio.costo);
     let montoDescuento = 0;
 
     if (descuento) {
-      const valor =
-        Number(descuento.valor);
-
-      if (
-        descuento.tipo ===
-        'PORCENTAJE'
-      ) {
-        montoDescuento =
-          precioBase *
-          (valor / 100);
-      } else {
-        montoDescuento =
-          valor;
-      }
+      const valor = Number(descuento.valor);
 
       montoDescuento =
-        Math.min(
-          montoDescuento,
-          precioBase,
-        );
+        descuento.tipo === 'PORCENTAJE'
+          ? precioBase * (valor / 100)
+          : valor;
+
+      montoDescuento = Math.min(montoDescuento, precioBase);
     }
 
-    montoDescuento =
-      this.redondear(
-        montoDescuento,
-      );
+    montoDescuento = this.redondear(montoDescuento);
 
-    const montoCobrado =
-      this.redondear(
-        Math.max(
-          precioBase -
-          montoDescuento,
-          0,
-        ),
-      );
+    const montoCobrado = this.redondear(
+      Math.max(precioBase - montoDescuento, 0),
+    );
 
-    const moneda =
-      (
-        data.moneda ??
-        (data.medioPago ===
-          MedioPago.PAYPAL
-          ? 'USD'
-          : 'BOB')
-      )
-        .trim()
-        .toUpperCase();
+    const moneda = (
+      data.moneda ??
+      (data.medioPago === MedioPago.PAYPAL ? 'USD' : 'BOB')
+    )
+      .trim()
+      .toUpperCase();
 
     if (moneda.length !== 3) {
       throw new BadRequestException(
@@ -270,94 +195,39 @@ export class VentasService {
       );
     }
 
-    const venta =
-      await db.ventaModulo.create({
-        data: {
-          usuarioId:
-            lead.usuarioId,
+    const venta: VentaConRelaciones = await db.ventaModulo.create({
+      data: {
+        usuarioId: lead.usuarioId,
+        moduloId,
+        leadId: lead.id,
+        inscripcionId: data.inscripcionId ?? null,
+        descuentoId: descuento?.id ?? null,
+        precioBase: new Prisma.Decimal(precioBase),
+        descuentoNombre: descuento?.nombre ?? null,
+        descuentoTipo: descuento?.tipo ?? null,
+        descuentoValor: descuento
+          ? new Prisma.Decimal(Number(descuento.valor))
+          : null,
+        montoDescuento: new Prisma.Decimal(montoDescuento),
+        montoCobrado: new Prisma.Decimal(montoCobrado),
+        comision: new Prisma.Decimal(0),
+        comisionConfirmada: false,
+        comprobantePagoUrl: data.comprobantePagoUrl ?? null,
+        comprobantePagoPublicId: data.comprobantePagoPublicId ?? null,
+        comprobantePagoNombre: data.comprobantePagoNombre ?? null,
+        moneda,
+        medioPago: data.medioPago,
+        paisCodigo: lead.usuario.perfil?.paisCodigo ?? null,
+        referenciaPago:
+          data.referenciaPago?.trim() ||
+          lead.referenciaPago ||
+          null,
+        observaciones: data.observaciones?.trim() || null,
+      },
+      include: ventaInclude,
+    });
 
-          moduloId:
-            lead.moduloId,
-
-          leadId:
-            lead.id,
-
-          inscripcionId:
-            data.inscripcionId ??
-            null,
-
-          descuentoId:
-            descuento?.id ??
-            null,
-
-          precioBase:
-            new Prisma.Decimal(
-              precioBase,
-            ),
-
-          descuentoNombre:
-            descuento?.nombre ??
-            null,
-
-          descuentoTipo:
-            descuento?.tipo ??
-            null,
-
-          descuentoValor:
-            descuento
-              ? new Prisma.Decimal(
-                Number(
-                  descuento.valor,
-                ),
-              )
-              : null,
-
-          montoDescuento:
-            new Prisma.Decimal(
-              montoDescuento,
-            ),
-
-          montoCobrado:
-            new Prisma.Decimal(
-              montoCobrado,
-            ),
-
-          comision:
-            new Prisma.Decimal(
-              0,
-            ),
-
-          comisionConfirmada:
-            false,
-
-          moneda,
-
-          medioPago:
-            data.medioPago,
-
-          paisCodigo:
-            lead.usuario
-              .perfil
-              ?.paisCodigo ??
-            null,
-
-          referenciaPago:
-            data.referenciaPago
-              ?.trim() ||
-            null,
-
-          observaciones:
-            data.observaciones
-              ?.trim() ||
-            null,
-        },
-        include:
-          ventaInclude,
-      });
-
-    return this.formatearVenta(
-      venta,
-    );
+    return this.formatearVenta(venta);
   }
 
   async findAll(
@@ -365,259 +235,126 @@ export class VentasService {
     limit = 10,
     filtros: FiltrosVentas = {},
   ) {
-    page = Math.max(
-      Number(page) || 1,
-      1,
-    );
+    page = Math.max(Number(page) || 1, 1);
+    limit = Math.min(Math.max(Number(limit) || 10, 1), 100);
 
-    limit = Math.min(
-      Math.max(
-        Number(limit) || 10,
-        1,
-      ),
-      100,
-    );
+    const where: Prisma.VentaModuloWhereInput = {};
 
-    const where:
-      Prisma.VentaModuloWhereInput =
-      {};
-
-    if (filtros.usuarioId) {
-      where.usuarioId =
-        filtros.usuarioId;
-    }
-
-    if (filtros.moduloId) {
-      where.moduloId =
-        filtros.moduloId;
-    }
-
-    if (filtros.medioPago) {
-      where.medioPago =
-        filtros.medioPago;
-    }
+    if (filtros.usuarioId) where.usuarioId = filtros.usuarioId;
+    if (filtros.moduloId) where.moduloId = filtros.moduloId;
+    if (filtros.medioPago) where.medioPago = filtros.medioPago;
 
     if (filtros.moneda) {
-      where.moneda =
-        filtros.moneda
-          .trim()
-          .toUpperCase();
+      where.moneda = filtros.moneda.trim().toUpperCase();
     }
 
-    if (
-      filtros.comisionConfirmada !==
-      undefined
-    ) {
-      where.comisionConfirmada =
-        filtros.comisionConfirmada;
+    if (filtros.comisionConfirmada !== undefined) {
+      where.comisionConfirmada = filtros.comisionConfirmada;
     }
 
-    if (
-      filtros.desde ||
-      filtros.hasta
-    ) {
+    if (filtros.desde || filtros.hasta) {
       where.creadoEn = {};
 
       if (filtros.desde) {
-        where.creadoEn.gte =
-          new Date(
-            filtros.desde,
-          );
+        where.creadoEn.gte = new Date(filtros.desde);
       }
 
       if (filtros.hasta) {
-        where.creadoEn.lte =
-          new Date(
-            filtros.hasta,
-          );
+        where.creadoEn.lte = new Date(filtros.hasta);
       }
     }
 
-    const [ventas, total] =
-      await this.prisma.$transaction(
-        [
-          this.prisma.ventaModulo.findMany(
-            {
-              where,
-              include:
-                ventaInclude,
-              orderBy: {
-                creadoEn:
-                  'desc',
-              },
-              skip:
-                (page - 1) *
-                limit,
-              take: limit,
-            },
-          ),
-
-          this.prisma.ventaModulo.count(
-            {
-              where,
-            },
-          ),
-        ],
-      );
+    const [ventas, total] = await this.prisma.$transaction([
+      this.prisma.ventaModulo.findMany({
+        where,
+        include: ventaInclude,
+        orderBy: { creadoEn: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.ventaModulo.count({ where }),
+    ]);
 
     return {
-      data: ventas.map(
-        (venta) =>
-          this.formatearVenta(
-            venta,
-          ),
-      ),
+      data: ventas.map((venta) => this.formatearVenta(venta)),
       meta: {
         page,
         limit,
         total,
-        totalPages:
-          Math.ceil(
-            total / limit,
-          ) || 1,
+        totalPages: Math.ceil(total / limit) || 1,
       },
     };
   }
 
   async findOne(id: string) {
-    const venta =
-      await this.prisma.ventaModulo.findUnique(
-        {
-          where: {
-            id,
-          },
-          include:
-            ventaInclude,
-        },
-      );
+    const venta = await this.prisma.ventaModulo.findUnique({
+      where: { id },
+      include: ventaInclude,
+    });
 
     if (!venta) {
-      throw new NotFoundException(
-        'Venta no encontrada',
-      );
+      throw new NotFoundException('Venta no encontrada');
     }
 
-    return this.formatearVenta(
-      venta,
-    );
+    return this.formatearVenta(venta);
   }
 
-  async actualizarComision(
-    id: string,
-    comision: number,
-  ) {
-    const venta =
-      await this.prisma.ventaModulo.findUnique(
-        {
-          where: {
-            id,
-          },
-        },
-      );
+  async actualizarComision(id: string, comision: number) {
+    const venta = await this.prisma.ventaModulo.findUnique({
+      where: { id },
+    });
 
     if (!venta) {
-      throw new NotFoundException(
-        'Venta no encontrada',
-      );
+      throw new NotFoundException('Venta no encontrada');
     }
 
-    const montoCobrado =
-      Number(
-        venta.montoCobrado,
-      );
+    const montoCobrado = Number(venta.montoCobrado);
+    const nuevaComision = Number(comision);
 
-    const nuevaComision =
-      Number(comision);
-
-    if (
-      !Number.isFinite(
-        nuevaComision,
-      ) ||
-      nuevaComision < 0
-    ) {
+    if (!Number.isFinite(nuevaComision) || nuevaComision < 0) {
       throw new BadRequestException(
         'La comisión debe ser un valor válido mayor o igual a 0',
       );
     }
 
-    if (
-      nuevaComision >
-      montoCobrado
-    ) {
+    if (nuevaComision > montoCobrado) {
       throw new BadRequestException(
         'La comisión no puede ser mayor al monto cobrado',
       );
     }
 
-    const actualizado =
-      await this.prisma.ventaModulo.update(
-        {
-          where: {
-            id,
-          },
-          data: {
-            comision:
-              new Prisma.Decimal(
-                this.redondear(
-                  nuevaComision,
-                ),
-              ),
-            comisionConfirmada:
-              true,
-          },
-          include:
-            ventaInclude,
-        },
-      );
+    const actualizado = await this.prisma.ventaModulo.update({
+      where: { id },
+      data: {
+        comision: new Prisma.Decimal(this.redondear(nuevaComision)),
+        comisionConfirmada: true,
+      },
+      include: ventaInclude,
+    });
 
-    return this.formatearVenta(
-      actualizado,
-    );
+    return this.formatearVenta(actualizado);
   }
 
-  async marcarComisionPendiente(
-    id: string,
-  ) {
-    const venta =
-      await this.prisma.ventaModulo.findUnique(
-        {
-          where: {
-            id,
-          },
-          select: {
-            id: true,
-          },
-        },
-      );
+  async marcarComisionPendiente(id: string) {
+    const venta = await this.prisma.ventaModulo.findUnique({
+      where: { id },
+      select: { id: true },
+    });
 
     if (!venta) {
-      throw new NotFoundException(
-        'Venta no encontrada',
-      );
+      throw new NotFoundException('Venta no encontrada');
     }
 
-    const actualizado =
-      await this.prisma.ventaModulo.update(
-        {
-          where: {
-            id,
-          },
-          data: {
-            comision:
-              new Prisma.Decimal(
-                0,
-              ),
-            comisionConfirmada:
-              false,
-          },
-          include:
-            ventaInclude,
-        },
-      );
+    const actualizado = await this.prisma.ventaModulo.update({
+      where: { id },
+      data: {
+        comision: new Prisma.Decimal(0),
+        comisionConfirmada: false,
+      },
+      include: ventaInclude,
+    });
 
-    return this.formatearVenta(
-      actualizado,
-    );
+    return this.formatearVenta(actualizado);
   }
 
   async vincularInscripcion(
@@ -627,66 +364,39 @@ export class VentasService {
   ) {
     const db = tx ?? this.prisma;
 
-    const venta =
-      await db.ventaModulo.findUnique(
-        {
-          where: {
-            id: ventaId,
-          },
-        },
-      );
+    const venta = await db.ventaModulo.findUnique({
+      where: { id: ventaId },
+    });
 
     if (!venta) {
-      throw new NotFoundException(
-        'Venta no encontrada',
-      );
+      throw new NotFoundException('Venta no encontrada');
     }
 
-    const inscripcion =
-      await db.inscripcion.findUnique(
-        {
-          where: {
-            id: inscripcionId,
-          },
-        },
-      );
+    const inscripcion = await db.inscripcion.findUnique({
+      where: { id: inscripcionId },
+    });
 
     if (!inscripcion) {
-      throw new NotFoundException(
-        'Inscripción no encontrada',
-      );
+      throw new NotFoundException('Inscripción no encontrada');
     }
 
     if (
-      inscripcion.estudianteId !==
-      venta.usuarioId ||
-      inscripcion.moduloId !==
-      venta.moduloId
+      inscripcion.estudianteId !== venta.usuarioId ||
+      inscripcion.moduloId !== venta.moduloId
     ) {
       throw new BadRequestException(
         'La inscripción no corresponde al estudiante o módulo de esta venta',
       );
     }
 
-    const actualizado =
-      await db.ventaModulo.update(
-        {
-          where: {
-            id: ventaId,
-          },
-          data: {
-            inscripcionId,
-          },
-          include:
-            ventaInclude,
-        },
-      );
+    const actualizado = await db.ventaModulo.update({
+      where: { id: ventaId },
+      data: { inscripcionId },
+      include: ventaInclude,
+    });
 
-    return this.formatearVenta(
-      actualizado,
-    );
+    return this.formatearVenta(actualizado);
   }
-
 
   async getResumen(desde?: string, hasta?: string) {
     const where: Prisma.VentaModuloWhereInput = {};
@@ -721,63 +431,38 @@ export class VentasService {
       totalVentasBolivia,
       resumenBolivia,
     ] = await this.prisma.$transaction([
-      this.prisma.ventaModulo.count({
-        where,
-      }),
-
+      this.prisma.ventaModulo.count({ where }),
       this.prisma.ventaModulo.aggregate({
         where,
-        _sum: {
-          montoCobrado: true,
-          comision: true,
-        },
+        _sum: { montoCobrado: true, comision: true },
       }),
-
-      this.prisma.ventaModulo.count({
-        where: wherePaypal,
-      }),
-
+      this.prisma.ventaModulo.count({ where: wherePaypal }),
       this.prisma.ventaModulo.aggregate({
         where: wherePaypal,
-        _sum: {
-          montoCobrado: true,
-          comision: true,
-        },
+        _sum: { montoCobrado: true, comision: true },
       }),
-
-      this.prisma.ventaModulo.count({
-        where: whereBolivia,
-      }),
-
+      this.prisma.ventaModulo.count({ where: whereBolivia }),
       this.prisma.ventaModulo.aggregate({
         where: whereBolivia,
-        _sum: {
-          montoCobrado: true,
-          comision: true,
-        },
+        _sum: { montoCobrado: true, comision: true },
       }),
     ]);
 
     const totalCobrado = Number(
       resumenGeneral._sum.montoCobrado ?? 0,
     );
-
     const totalComisiones = Number(
       resumenGeneral._sum.comision ?? 0,
     );
-
     const paypalCobrado = Number(
       resumenPaypal._sum.montoCobrado ?? 0,
     );
-
     const paypalComisiones = Number(
       resumenPaypal._sum.comision ?? 0,
     );
-
     const boliviaCobrado = Number(
       resumenBolivia._sum.montoCobrado ?? 0,
     );
-
     const boliviaComisiones = Number(
       resumenBolivia._sum.comision ?? 0,
     );
@@ -787,14 +472,12 @@ export class VentasService {
       totalCobrado,
       totalComisiones,
       gananciaNeta: totalCobrado - totalComisiones,
-
       paypal: {
         ventas: totalVentasPaypal,
         cobrado: paypalCobrado,
         comisiones: paypalComisiones,
         neto: paypalCobrado - paypalComisiones,
       },
-
       bolivia: {
         ventas: totalVentasBolivia,
         cobrado: boliviaCobrado,
@@ -822,10 +505,7 @@ export class VentasService {
       );
     }
 
-    const crearFecha = (
-      valor: string,
-      finDelDia = false,
-    ) => {
+    const crearFecha = (valor: string, finDelDia = false) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(valor)) {
         throw new BadRequestException(
           'Las fechas deben tener el formato YYYY-MM-DD',
@@ -833,9 +513,7 @@ export class VentasService {
       }
 
       const fecha = new Date(
-        `${valor}T${finDelDia
-          ? '23:59:59.999'
-          : '00:00:00.000'
+        `${valor}T${finDelDia ? '23:59:59.999' : '00:00:00.000'
         }-04:00`,
       );
 
@@ -870,70 +548,43 @@ export class VentasService {
       ...(desdeFecha || hastaFecha
         ? {
           creadoEn: {
-            ...(desdeFecha && {
-              gte: desdeFecha,
-            }),
-            ...(hastaFecha && {
-              lte: hastaFecha,
-            }),
+            ...(desdeFecha && { gte: desdeFecha }),
+            ...(hastaFecha && { lte: hastaFecha }),
           },
         }
         : {}),
     };
 
-    const ventas =
-      await this.prisma.ventaModulo.findMany({
-        where,
-        select: {
-          creadoEn: true,
-          montoCobrado: true,
-          comision: true,
-          medioPago: true,
-        },
-        orderBy: {
-          creadoEn: 'asc',
-        },
-      });
+    const ventas = await this.prisma.ventaModulo.findMany({
+      where,
+      select: {
+        creadoEn: true,
+        montoCobrado: true,
+        comision: true,
+        medioPago: true,
+      },
+      orderBy: { creadoEn: 'asc' },
+    });
 
-    const obtenerPeriodo = (
-      fecha: Date,
-    ): string => {
-      const partes =
-        new Intl.DateTimeFormat(
-          'en-US',
-          {
-            timeZone: 'America/La_Paz',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-          },
-        ).formatToParts(fecha);
+    const obtenerPeriodo = (fecha: Date) => {
+      const partes = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/La_Paz',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(fecha);
 
       const anio =
-        partes.find(
-          (parte) =>
-            parte.type === 'year',
-        )?.value ?? '';
+        partes.find((parte) => parte.type === 'year')?.value ?? '';
 
       const mes =
-        partes.find(
-          (parte) =>
-            parte.type === 'month',
-        )?.value ?? '';
+        partes.find((parte) => parte.type === 'month')?.value ?? '';
 
       const dia =
-        partes.find(
-          (parte) =>
-            parte.type === 'day',
-        )?.value ?? '';
+        partes.find((parte) => parte.type === 'day')?.value ?? '';
 
-      if (agrupacion === 'ANIO') {
-        return anio;
-      }
-
-      if (agrupacion === 'MES') {
-        return `${anio}-${mes}`;
-      }
+      if (agrupacion === 'ANIO') return anio;
+      if (agrupacion === 'MES') return `${anio}-${mes}`;
 
       return `${anio}-${mes}-${dia}`;
     };
@@ -948,131 +599,64 @@ export class VentasService {
       bolivia: number;
     };
 
-    const agrupado =
-      new Map<
-        string,
-        EstadisticaAcumulada
-      >();
+    const agrupado = new Map<string, EstadisticaAcumulada>();
 
     for (const venta of ventas) {
-      const periodo =
-        obtenerPeriodo(
-          venta.creadoEn,
-        );
-
-      const cobrado =
-        Number(
-          venta.montoCobrado,
-        );
-
-      const comision =
-        Number(
-          venta.comision,
-        );
-
-      const neto =
-        cobrado -
-        comision;
-
-      const existente =
-        agrupado.get(periodo);
+      const periodo = obtenerPeriodo(venta.creadoEn);
+      const cobrado = Number(venta.montoCobrado);
+      const comision = Number(venta.comision);
+      const neto = cobrado - comision;
+      const existente = agrupado.get(periodo);
 
       if (existente) {
         existente.ventas += 1;
-        existente.cobrado +=
-          cobrado;
-        existente.comisiones +=
-          comision;
-        existente.neto +=
-          neto;
+        existente.cobrado += cobrado;
+        existente.comisiones += comision;
+        existente.neto += neto;
 
-        if (
-          venta.medioPago ===
-          MedioPago.PAYPAL
-        ) {
-          existente.paypal +=
-            neto;
+        if (venta.medioPago === MedioPago.PAYPAL) {
+          existente.paypal += neto;
         }
 
-        if (
-          venta.medioPago ===
-          MedioPago.BOLIVIA
-        ) {
-          existente.bolivia +=
-            neto;
+        if (venta.medioPago === MedioPago.BOLIVIA) {
+          existente.bolivia += neto;
         }
 
         continue;
       }
 
-      agrupado.set(
+      agrupado.set(periodo, {
         periodo,
-        {
-          periodo,
-          ventas: 1,
-          cobrado,
-          comisiones: comision,
-          neto,
-          paypal:
-            venta.medioPago ===
-              MedioPago.PAYPAL
-              ? neto
-              : 0,
-          bolivia:
-            venta.medioPago ===
-              MedioPago.BOLIVIA
-              ? neto
-              : 0,
-        },
-      );
+        ventas: 1,
+        cobrado,
+        comisiones: comision,
+        neto,
+        paypal:
+          venta.medioPago === MedioPago.PAYPAL
+            ? neto
+            : 0,
+        bolivia:
+          venta.medioPago === MedioPago.BOLIVIA
+            ? neto
+            : 0,
+      });
     }
 
-    const redondear = (
-      valor: number,
-    ) =>
-      Math.round(
-        valor * 100,
-      ) / 100;
+    const redondear = (valor: number) =>
+      Math.round(valor * 100) / 100;
 
-    const data =
-      Array.from(
-        agrupado.values(),
-      )
-        .sort((a, b) =>
-          a.periodo.localeCompare(
-            b.periodo,
-          ),
-        )
-        .map((item) => ({
-          periodo:
-            item.periodo,
-          ventas:
-            item.ventas,
-          cobrado:
-            redondear(
-              item.cobrado,
-            ),
-          comisiones:
-            redondear(
-              item.comisiones,
-            ),
-          neto:
-            redondear(
-              item.neto,
-            ),
-          paypal:
-            redondear(
-              item.paypal,
-            ),
-          bolivia:
-            redondear(
-              item.bolivia,
-            ),
-        }));
+    const data = Array.from(agrupado.values())
+      .sort((a, b) => a.periodo.localeCompare(b.periodo))
+      .map((item) => ({
+        periodo: item.periodo,
+        ventas: item.ventas,
+        cobrado: redondear(item.cobrado),
+        comisiones: redondear(item.comisiones),
+        neto: redondear(item.neto),
+        paypal: redondear(item.paypal),
+        bolivia: redondear(item.bolivia),
+      }));
 
-    return {
-      agrupacion,
-      data,
-    };
+    return { agrupacion, data };
   }
 }

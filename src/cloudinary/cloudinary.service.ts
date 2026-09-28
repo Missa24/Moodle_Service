@@ -147,4 +147,15 @@ export class CloudinaryService {
     });
   }
 
+  async deleteImage(
+    publicId: string,
+  ): Promise<void> {
+    await cloudinary.uploader.destroy(
+      publicId,
+      {
+        resource_type: 'image',
+      },
+    );
+  }
+
 }
