@@ -4,8 +4,9 @@ import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateMiPerfilDto, UpdateUsuarioDto } from './dto/update-user.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
-import { CambiarMiPasswordDto, ChangePasswordUserDto } from './dto/change-password';
+import { CambiarMiPasswordDto } from './dto/change-password';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { randomInt } from 'crypto';
 
 @Injectable()
 export class UserService {
@@ -14,6 +15,32 @@ export class UserService {
     private readonly prisma: PrismaService,
     private readonly cloudinaryService: CloudinaryService
   ) { };
+
+
+  private generarPasswordTemporal(longitud = 14) {
+    const mayusculas = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const minusculas = 'abcdefghijkmnopqrstuvwxyz';
+    const numeros = '23456789';
+    const todos = mayusculas + minusculas + numeros;
+
+    const caracteres = [
+      mayusculas[randomInt(mayusculas.length)],
+      minusculas[randomInt(minusculas.length)],
+      numeros[randomInt(numeros.length)],
+    ];
+
+    while (caracteres.length < longitud) {
+      caracteres.push(todos[randomInt(todos.length)]);
+    }
+
+    for (let i = caracteres.length - 1; i > 0; i--) {
+      const j = randomInt(i + 1);
+      [caracteres[i], caracteres[j]] = [caracteres[j], caracteres[i]];
+    }
+
+    return caracteres.join('');
+  }
+
 
   private async generateUsername(
     nombre: string,
@@ -736,24 +763,33 @@ export class UserService {
     };
   }
 
-  async changePasswordUser(id: string, dto: ChangePasswordUserDto) {
+  async changePasswordUser(id: string) {
     const usuario = await this.prisma.usuario.findUnique({
       where: { id },
-      select: { id: true, username: true },
+      select: { id: true, username: true, correo: true },
     });
 
     if (!usuario) {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    const nuevoHash = await this.hashPassword(dto.password);
+    const passwordTemporal = this.generarPasswordTemporal();
+    const nuevoHash = await this.hashPassword(passwordTemporal);
 
     await this.prisma.usuario.update({
       where: { id },
       data: { contrasenaHash: nuevoHash },
     });
 
-    return { mensaje: 'Contraseña actualizada correctamente ' + usuario.username };
+    return {
+      mensaje: 'Contraseña restablecida correctamente',
+      passwordTemporal,
+      usuario: {
+        id: usuario.id,
+        username: usuario.username,
+        correo: usuario.correo,
+      },
+    };
   }
 
   async actualizarFotoPerfil(

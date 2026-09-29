@@ -24,7 +24,6 @@ import { Permission } from 'src/common/decorator/decorator';
 import { CreateStudentDto } from './dto/create-student.dto';
 import {
   CambiarMiPasswordDto,
-  ChangePasswordUserDto,
 } from './dto/change-password';
 import type { AuthenticatedRequest } from 'src/common/types/authenticated-user';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -112,11 +111,8 @@ export class UserController {
   @Patch('password/:id')
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @Permission('usuarios.editar')
-  async changePasswordUser(
-    @Param('id') id: string,
-    @Body() dto: ChangePasswordUserDto,
-  ) {
-    return await this.userService.changePasswordUser(id, dto);
+  changePasswordUser(@Param('id') id: string) {
+    return this.userService.changePasswordUser(id);
   }
 
   @Patch(':id')
