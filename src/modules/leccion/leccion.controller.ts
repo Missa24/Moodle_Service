@@ -82,6 +82,7 @@ export class LeccionController {
   @Patch(':id')
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @Permission('lecciones.editar')
+  @UseInterceptors(FileInterceptor('video'))
   update(
     @Param('id') id: string,
     @Body() dto: UpdateLeccionDto,
