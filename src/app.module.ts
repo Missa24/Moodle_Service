@@ -26,7 +26,7 @@ import { NotificacionesModule } from './modules/notificaciones/notificaciones.mo
 import { LeadModule } from './lead/lead.module';
 import { DescuentoModule } from './modules/descuento/descuento.module';
 import { VentasModule } from './ventas/ventas.module';
-
+import { GoogleDriveModule } from './google-drive/google-drive.module';
 
 @Module({
   imports: [
@@ -51,7 +51,7 @@ import { VentasModule } from './ventas/ventas.module';
     LeadModule,
     DescuentoModule,
     VentasModule,
-
+    GoogleDriveModule,
   ],
   controllers: [AppController],
   providers: [
