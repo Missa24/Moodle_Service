@@ -16,7 +16,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const response = ctx.getResponse();
     const request = ctx.getRequest();
 
-    // error http exception
+    const method = request.method;
+    const url = request.url;
+
+    // Log SIEMPRE el error real en el servidor
+    if (exception instanceof Error) {
+      this.logger.error(
+        `${method} ${url} | ${exception.name}: ${exception.message}`,
+        exception.stack,
+      );
+    } else {
+      this.logger.error(
+        `${method} ${url} | Error no estándar`,
+        JSON.stringify(exception, null, 2),
+      );
+    }
+
+    // Errores HTTP controlados
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
@@ -32,6 +48,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
           message?: string | string[];
           error?: string;
         };
+
         message = body.message ?? exception.message;
         error = body.error ?? exception.name;
       }
@@ -42,21 +59,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
         error,
         statusCode: status,
       });
+
       return;
     }
 
-    // error unexpected
-    if (exception instanceof Error) {
-      this.logger.error(
-        `Error inesperado | ${exception.message}`,
-        exception.stack,
-      );
-    } else {
-      this.logger.error(
-        `Error inesperado | ${request.method} ${request.url}`,
-      );
-    }
-
+    // Error 500
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: 'Error interno del servidor',
