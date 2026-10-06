@@ -86,6 +86,7 @@ export class LeadController {
       estado,
       medioPago,
       moneda,
+      montoCobrado,
       referenciaPago,
       observaciones,
     } = dto;
@@ -96,6 +97,7 @@ export class LeadController {
       {
         medioPago,
         moneda,
+        montoCobrado,
         referenciaPago,
         observaciones,
       },

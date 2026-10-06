@@ -4,18 +4,25 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EstadoLead, MedioPago, Prisma, TipoCompra } from '@prisma/client';
-
+import {
+  EstadoLead,
+  MedioPago,
+  Prisma,
+  TipoCompra,
+  TipoDescuentoCurso,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { InscripcionesService } from 'src/modules/inscripcion/inscripciones.service';
 import { VentasService } from 'src/ventas/ventas.service';
 import { VentasCursoService } from 'src/ventas/ventas-curso.service';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
+import { NotificacionesService } from 'src/modules/notificaciones/notificaciones.service';
 
 type DatosPagoLead = {
   medioPago?: MedioPago;
   moneda?: string;
+  montoCobrado?: number;
   referenciaPago?: string;
   observaciones?: string;
 };
@@ -70,10 +77,179 @@ export class LeadService {
     private readonly ventasService: VentasService,
     private readonly ventasCursoService: VentasCursoService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly notificacionesService: NotificacionesService,
   ) { }
 
   private generarNumeroInscripcion() {
     return `INS-${Date.now()}-${Math.floor(Math.random() * 1000000000)}`;
+  }
+
+  private redondear(valor: number) {
+    return Math.round((valor + Number.EPSILON) * 100) / 100;
+  }
+
+  private async obtenerPrecioModulo(moduloId: string) {
+    const precio = await this.prisma.precio.findFirst({
+      where: { moduloId },
+      orderBy: { creadoEn: 'desc' },
+      select: { costo: true },
+    });
+
+    if (!precio) {
+      throw new BadRequestException(
+        'El módulo no tiene un precio configurado',
+      );
+    }
+
+    const precioBase = Number(precio.costo);
+
+    const ahora = new Date();
+
+    const descuento = await this.prisma.descuento.findFirst({
+      where: {
+        habilitado: true,
+        iniciaEn: { lte: ahora },
+        finalizaEn: { gte: ahora },
+        modulos: { some: { moduloId } },
+      },
+      orderBy: { iniciaEn: 'desc' },
+      select: {
+        tipo: true,
+        valor: true,
+      },
+    });
+
+    let montoDescuento = 0;
+
+    if (descuento) {
+      const valor = Number(descuento.valor);
+
+      montoDescuento =
+        descuento.tipo === 'PORCENTAJE'
+          ? precioBase * (valor / 100)
+          : valor;
+
+      montoDescuento = Math.min(montoDescuento, precioBase);
+    }
+
+    montoDescuento = this.redondear(montoDescuento);
+
+    return this.redondear(
+      Math.max(precioBase - montoDescuento, 0),
+    );
+  }
+
+  private async obtenerPrecioCurso(cursoId: string) {
+    const curso = await this.prisma.curso.findUnique({
+      where: { id: cursoId },
+      select: {
+        configuracionVenta: {
+          select: {
+            tipoDescuento: true,
+            porcentaje: true,
+            moduloDescuentoId: true,
+            habilitado: true,
+          },
+        },
+        modulos: {
+          where: { estaPublicado: true },
+          select: {
+            id: true,
+            precios: {
+              orderBy: { creadoEn: 'desc' },
+              take: 1,
+              select: { costo: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!curso) {
+      throw new NotFoundException('Curso no encontrado');
+    }
+
+    if (!curso.modulos.length) {
+      throw new BadRequestException(
+        'El curso no tiene módulos publicados',
+      );
+    }
+
+    const moduloSinPrecio = curso.modulos.find(
+      (modulo) => !modulo.precios.length,
+    );
+
+    if (moduloSinPrecio) {
+      throw new BadRequestException(
+        'Uno de los módulos del curso no tiene un precio configurado',
+      );
+    }
+
+    const configuracion = curso.configuracionVenta;
+
+    if (!configuracion?.habilitado) {
+      throw new BadRequestException(
+        'La venta del curso completo no está habilitada',
+      );
+    }
+
+    let precioBase = 0;
+
+    for (const modulo of curso.modulos) {
+      precioBase += Number(modulo.precios[0].costo);
+    }
+
+    let montoDescuento = 0;
+
+    if (
+      configuracion.tipoDescuento ===
+      TipoDescuentoCurso.PORCENTAJE
+    ) {
+      if (configuracion.porcentaje === null) {
+        throw new BadRequestException(
+          'La configuración del curso no tiene porcentaje de descuento',
+        );
+      }
+
+      montoDescuento =
+        precioBase *
+        (Number(configuracion.porcentaje) / 100);
+    }
+
+    if (
+      configuracion.tipoDescuento ===
+      TipoDescuentoCurso.MODULO_GRATIS
+    ) {
+      if (!configuracion.moduloDescuentoId) {
+        throw new BadRequestException(
+          'No se configuró el módulo gratuito',
+        );
+      }
+
+      const moduloGratis = curso.modulos.find(
+        (modulo) =>
+          modulo.id === configuracion.moduloDescuentoId,
+      );
+
+      if (!moduloGratis) {
+        throw new BadRequestException(
+          'El módulo configurado como gratuito no pertenece al curso',
+        );
+      }
+
+      montoDescuento = Number(
+        moduloGratis.precios[0].costo,
+      );
+    }
+
+    precioBase = this.redondear(precioBase);
+    montoDescuento = this.redondear(
+      Math.min(montoDescuento, precioBase),
+    );
+
+    return this.redondear(
+      Math.max(precioBase - montoDescuento, 0),
+    );
   }
 
   async create(usuarioId: string, dto: CreateLeadDto) {
@@ -81,26 +257,25 @@ export class LeadService {
       dto.tipoCompra ?? (dto.cursoId ? TipoCompra.CURSO : TipoCompra.MODULO);
 
     if (tipoCompra === TipoCompra.MODULO) {
-      if (!dto.moduloId) {
+      if (!dto.moduloId)
         throw new BadRequestException(
           'Debes indicar el módulo que deseas comprar',
         );
-      }
 
-      if (dto.cursoId) {
+      if (dto.cursoId)
         throw new BadRequestException(
           'Una compra de módulo no debe incluir cursoId',
         );
-      }
 
       const modulo = await this.prisma.modulo.findUnique({
         where: { id: dto.moduloId },
         select: { id: true },
       });
 
-      if (!modulo) {
-        throw new BadRequestException('El módulo indicado no existe');
-      }
+      if (!modulo)
+        throw new BadRequestException(
+          'El módulo indicado no existe',
+        );
 
       const inscripcion = await this.prisma.inscripcion.findUnique({
         where: {
@@ -115,9 +290,10 @@ export class LeadService {
       if (
         inscripcion?.estado === 'activa' &&
         inscripcion.estadoAcceso === 'habilitado'
-      ) {
-        throw new BadRequestException('Ya tienes acceso a este módulo');
-      }
+      )
+        throw new BadRequestException(
+          'Ya tienes acceso a este módulo',
+        );
 
       const leadExistente = await this.prisma.lead.findUnique({
         where: {
@@ -126,12 +302,15 @@ export class LeadService {
             moduloId: dto.moduloId,
           },
         },
-        include: { ventaModulo: { select: { id: true } } },
+        include: {
+          ventaModulo: { select: { id: true } },
+        },
       });
 
-      if (leadExistente?.ventaModulo) {
-        throw new BadRequestException('Este módulo ya fue adquirido');
-      }
+      if (leadExistente?.ventaModulo)
+        throw new BadRequestException(
+          'Este módulo ya fue adquirido',
+        );
 
       if (leadExistente) {
         await this.prisma.lead.update({
@@ -163,23 +342,23 @@ export class LeadService {
     }
 
     if (tipoCompra === TipoCompra.CURSO) {
-      if (!dto.cursoId) {
+      if (!dto.cursoId)
         throw new BadRequestException(
           'Debes indicar el curso que deseas comprar',
         );
-      }
 
-      if (dto.moduloId) {
+      if (dto.moduloId)
         throw new BadRequestException(
           'Una compra de curso no debe incluir moduloId',
         );
-      }
 
       const curso = await this.prisma.curso.findUnique({
         where: { id: dto.cursoId },
         select: {
           id: true,
-          configuracionVenta: { select: { habilitado: true } },
+          configuracionVenta: {
+            select: { habilitado: true },
+          },
           modulos: {
             where: { estaPublicado: true },
             select: { id: true },
@@ -187,38 +366,35 @@ export class LeadService {
         },
       });
 
-      if (!curso) {
-        throw new BadRequestException('El curso indicado no existe');
-      }
+      if (!curso)
+        throw new BadRequestException(
+          'El curso indicado no existe',
+        );
 
-      if (!curso.configuracionVenta?.habilitado) {
+      if (!curso.configuracionVenta?.habilitado)
         throw new BadRequestException(
           'La compra del curso completo no está habilitada',
         );
-      }
 
-      if (!curso.modulos.length) {
+      if (!curso.modulos.length)
         throw new BadRequestException(
           'El curso no tiene módulos publicados',
         );
-      }
 
       const estadoCompra = await this.obtenerEstadoCompraCurso(
         usuarioId,
         dto.cursoId,
       );
 
-      if (estadoCompra.compradoComoCurso) {
+      if (estadoCompra.compradoComoCurso)
         throw new BadRequestException(
           'Ya adquiriste este curso completo',
         );
-      }
 
-      if (estadoCompra.tieneTodosLosModulos) {
+      if (estadoCompra.tieneTodosLosModulos)
         throw new BadRequestException(
           'Ya tienes acceso a todos los módulos de este curso',
         );
-      }
 
       const leadExistente = await this.prisma.lead.findUnique({
         where: {
@@ -227,12 +403,15 @@ export class LeadService {
             cursoId: dto.cursoId,
           },
         },
-        include: { ventaCurso: { select: { id: true } } },
+        include: {
+          ventaCurso: { select: { id: true } },
+        },
       });
 
-      if (leadExistente?.ventaCurso) {
-        throw new BadRequestException('Este curso ya fue adquirido');
-      }
+      if (leadExistente?.ventaCurso)
+        throw new BadRequestException(
+          'Este curso ya fue adquirido',
+        );
 
       if (leadExistente) {
         await this.prisma.lead.update({
@@ -256,6 +435,10 @@ export class LeadService {
         },
       });
 
+      await this.notificacionesService.notificarLeadRegistrado({
+        leadId: lead.id,
+      });
+
       return {
         ok: true,
         leadId: lead.id,
@@ -272,13 +455,15 @@ export class LeadService {
     comprobante: Express.Multer.File,
     referenciaPago?: string,
   ) {
-    if (!comprobante) {
-      throw new BadRequestException('Debes adjuntar un comprobante de pago');
-    }
+    if (!comprobante)
+      throw new BadRequestException(
+        'Debes adjuntar un comprobante de pago',
+      );
 
-    if (!comprobante.mimetype.startsWith('image/')) {
-      throw new BadRequestException('El comprobante debe ser una imagen');
-    }
+    if (!comprobante.mimetype.startsWith('image/'))
+      throw new BadRequestException(
+        'El comprobante debe ser una imagen',
+      );
 
     const lead = await this.prisma.lead.findUnique({
       where: { id },
@@ -291,21 +476,18 @@ export class LeadService {
       },
     });
 
-    if (!lead) {
+    if (!lead)
       throw new NotFoundException('Lead no encontrado');
-    }
 
-    if (lead.usuarioId !== usuarioId) {
+    if (lead.usuarioId !== usuarioId)
       throw new ForbiddenException(
         'No puedes modificar el comprobante de otro usuario',
       );
-    }
 
-    if (lead.ventaModulo || lead.ventaCurso) {
+    if (lead.ventaModulo || lead.ventaCurso)
       throw new BadRequestException(
         'El pago ya fue confirmado y el comprobante ya no puede modificarse',
       );
-    }
 
     const imagen = await this.cloudinaryService.uploadImage(
       comprobante,
@@ -346,14 +528,16 @@ export class LeadService {
       await this.cloudinaryService
         .deleteImage(imagen.publicId)
         .catch(() => undefined);
-
       throw error;
     }
   }
 
   async findAll(page = 1, limit = 10, q = '') {
     const currentPage = Math.max(page, 1);
-    const currentLimit = Math.min(Math.max(limit, 1), 100);
+    const currentLimit = Math.min(
+      Math.max(limit, 1),
+      100,
+    );
     const search = q.trim();
 
     const where: Prisma.LeadWhereInput = search
@@ -361,13 +545,19 @@ export class LeadService {
         OR: [
           {
             usuario: {
-              correo: { contains: search, mode: 'insensitive' },
+              correo: {
+                contains: search,
+                mode: 'insensitive',
+              },
             },
           },
           {
             usuario: {
               perfil: {
-                nombre: { contains: search, mode: 'insensitive' },
+                nombre: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
               },
             },
           },
@@ -394,25 +584,37 @@ export class LeadService {
           {
             usuario: {
               perfil: {
-                telefono: { contains: search, mode: 'insensitive' },
+                telefono: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
               },
             },
           },
           {
             modulo: {
-              nombre: { contains: search, mode: 'insensitive' },
+              nombre: {
+                contains: search,
+                mode: 'insensitive',
+              },
             },
           },
           {
             modulo: {
               curso: {
-                nombre: { contains: search, mode: 'insensitive' },
+                nombre: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
               },
             },
           },
           {
             curso: {
-              nombre: { contains: search, mode: 'insensitive' },
+              nombre: {
+                contains: search,
+                mode: 'insensitive',
+              },
             },
           },
         ],
@@ -435,28 +637,37 @@ export class LeadService {
       tipoCompra: lead.tipoCompra,
       usuarioId: lead.usuario.id,
       nombre: lead.usuario.perfil?.nombre ?? '',
-      apellidoPaterno: lead.usuario.perfil?.apellidoPaterno ?? '',
-      apellidoMaterno: lead.usuario.perfil?.apellidoMaterno ?? '',
+      apellidoPaterno:
+        lead.usuario.perfil?.apellidoPaterno ?? '',
+      apellidoMaterno:
+        lead.usuario.perfil?.apellidoMaterno ?? '',
       correo: lead.usuario.correo,
       telefono: lead.usuario.perfil?.telefono ?? '',
       ciudad: lead.usuario.perfil?.ciudad ?? '',
       pais: lead.usuario.perfil?.pais ?? '',
-      paisCodigo: lead.usuario.perfil?.paisCodigo ?? '',
+      paisCodigo:
+        lead.usuario.perfil?.paisCodigo ?? '',
       curso:
         lead.tipoCompra === TipoCompra.CURSO
           ? lead.curso
           : lead.modulo?.curso ?? null,
       modulo: lead.modulo
-        ? { id: lead.modulo.id, nombre: lead.modulo.nombre }
+        ? {
+          id: lead.modulo.id,
+          nombre: lead.modulo.nombre,
+        }
         : null,
       ventaId:
         lead.tipoCompra === TipoCompra.CURSO
           ? lead.ventaCurso?.id ?? null
           : lead.ventaModulo?.id ?? null,
       referenciaPago: lead.referenciaPago,
-      comprobantePagoUrl: lead.comprobantePagoUrl,
-      comprobantePagoNombre: lead.comprobantePagoNombre,
-      comprobantePagoSubidoEn: lead.comprobantePagoSubidoEn,
+      comprobantePagoUrl:
+        lead.comprobantePagoUrl,
+      comprobantePagoNombre:
+        lead.comprobantePagoNombre,
+      comprobantePagoSubidoEn:
+        lead.comprobantePagoSubidoEn,
       estado: lead.estado,
       creadoEn: lead.creadoEn,
       actualizadoEn: lead.actualizadoEn,
@@ -470,7 +681,9 @@ export class LeadService {
         page: currentPage,
         limit: currentLimit,
         total,
-        totalPages: Math.ceil(total / currentLimit),
+        totalPages: Math.ceil(
+          total / currentLimit,
+        ),
       },
     };
   }
@@ -478,7 +691,9 @@ export class LeadService {
   async findByUser(usuarioId: string) {
     return this.prisma.lead.findMany({
       where: { usuarioId },
-      orderBy: { ultimoIntentoEn: 'desc' },
+      orderBy: {
+        ultimoIntentoEn: 'desc',
+      },
       select: {
         id: true,
         tipoCompra: true,
@@ -494,10 +709,20 @@ export class LeadService {
           select: {
             id: true,
             nombre: true,
-            curso: { select: { id: true, nombre: true } },
+            curso: {
+              select: {
+                id: true,
+                nombre: true,
+              },
+            },
           },
         },
-        curso: { select: { id: true, nombre: true } },
+        curso: {
+          select: {
+            id: true,
+            nombre: true,
+          },
+        },
       },
     });
   }
@@ -508,11 +733,35 @@ export class LeadService {
       select: leadDetailSelect,
     });
 
-    if (!lead) {
-      throw new NotFoundException('Lead no encontrado');
+    if (!lead)
+      throw new NotFoundException(
+        'Lead no encontrado',
+      );
+
+    let precioUSD: number | null = null;
+
+    if (
+      lead.tipoCompra === TipoCompra.MODULO &&
+      lead.modulo
+    ) {
+      precioUSD = await this.obtenerPrecioModulo(
+        lead.modulo.id,
+      );
     }
 
-    return lead;
+    if (
+      lead.tipoCompra === TipoCompra.CURSO &&
+      lead.curso
+    ) {
+      precioUSD = await this.obtenerPrecioCurso(
+        lead.curso.id,
+      );
+    }
+
+    return {
+      ...lead,
+      precioUSD,
+    };
   }
 
   async updateEstado(
@@ -535,14 +784,20 @@ export class LeadService {
       },
     });
 
-    if (!lead) throw new NotFoundException('Lead no encontrado');
+    if (!lead)
+      throw new NotFoundException(
+        'Lead no encontrado',
+      );
 
     if (estado !== EstadoLead.PAGO_COMPLETADO) {
       return this.prisma.lead.update({
         where: { id },
         data: {
           estado,
-          convertidoEn: estado === EstadoLead.CONVERTIDO ? new Date() : null,
+          convertidoEn:
+            estado === EstadoLead.CONVERTIDO
+              ? new Date()
+              : null,
         },
         select: {
           id: true,
@@ -550,50 +805,68 @@ export class LeadService {
           estado: true,
           convertidoEn: true,
           actualizadoEn: true,
-          ventaModulo: { select: { id: true } },
-          ventaCurso: { select: { id: true } },
+          ventaModulo: {
+            select: { id: true },
+          },
+          ventaCurso: {
+            select: { id: true },
+          },
         },
       });
     }
 
-    if (!datosPago?.medioPago) {
+    if (!datosPago?.medioPago)
       throw new BadRequestException(
         'Debes indicar el medio de pago para confirmar el pago',
       );
-    }
 
-    if (!comprobante) {
-      throw new BadRequestException('Debes adjuntar el comprobante de pago');
-    }
+    if (
+      datosPago.montoCobrado === undefined ||
+      datosPago.montoCobrado <= 0
+    )
+      throw new BadRequestException(
+        'Debes indicar un monto cobrado mayor a 0 para confirmar el pago',
+      );
 
-    const formatosPermitidos = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!comprobante)
+      throw new BadRequestException(
+        'Debes adjuntar el comprobante de pago',
+      );
 
-    if (!formatosPermitidos.includes(comprobante.mimetype)) {
+    const formatosPermitidos = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+    ];
+
+    if (
+      !formatosPermitidos.includes(
+        comprobante.mimetype,
+      )
+    )
       throw new BadRequestException(
         'El comprobante debe ser JPG, PNG o WEBP',
       );
-    }
 
-    if (lead.ventaModulo || lead.ventaCurso) {
+    if (lead.ventaModulo || lead.ventaCurso)
       throw new BadRequestException(
         'Este lead ya tiene una venta registrada',
       );
-    }
 
-    const imagen = await this.cloudinaryService.uploadImage(
-      comprobante,
-      'lms/comprobantes-pago',
-    );
+    const imagen =
+      await this.cloudinaryService.uploadImage(
+        comprobante,
+        'lms/comprobantes-pago',
+      );
 
     let ventaCreada = false;
 
     try {
       if (lead.tipoCompra === TipoCompra.MODULO) {
-        if (!lead.moduloId) {
+        if (!lead.moduloId)
           throw new BadRequestException(
             'El lead de módulo no tiene moduloId',
           );
-        }
 
         const estadoInscripcion =
           await this.inscripcionesService.verificarMiInscripcion(
@@ -608,104 +881,143 @@ export class LeadService {
           });
         }
 
-        const inscripcion = await this.prisma.inscripcion.findUnique({
-          where: {
-            moduloId_estudianteId: {
-              estudianteId: lead.usuarioId,
-              moduloId: lead.moduloId,
+        const inscripcion =
+          await this.prisma.inscripcion.findUnique({
+            where: {
+              moduloId_estudianteId: {
+                estudianteId:
+                  lead.usuarioId,
+                moduloId:
+                  lead.moduloId,
+              },
             },
-          },
-          select: { id: true },
-        });
+            select: { id: true },
+          });
 
-        if (!inscripcion) {
+        if (!inscripcion)
           throw new BadRequestException(
             'No se pudo obtener la inscripción del estudiante',
           );
-        }
 
-        await this.ventasService.registrarDesdeLead(lead.id, {
-          medioPago: datosPago.medioPago,
-          moneda: datosPago.moneda,
-          referenciaPago: datosPago.referenciaPago,
-          observaciones: datosPago.observaciones,
-          inscripcionId: inscripcion.id,
-          comprobantePagoUrl: imagen.url,
-          comprobantePagoPublicId: imagen.publicId,
-          comprobantePagoNombre: comprobante.originalname,
-        });
+        await this.ventasService.registrarDesdeLead(
+          lead.id,
+          {
+            medioPago:
+              datosPago.medioPago,
+            moneda: datosPago.moneda,
+            montoCobrado:
+              datosPago.montoCobrado,
+            referenciaPago:
+              datosPago.referenciaPago,
+            observaciones:
+              datosPago.observaciones,
+            inscripcionId:
+              inscripcion.id,
+            comprobantePagoUrl:
+              imagen.url,
+            comprobantePagoPublicId:
+              imagen.publicId,
+            comprobantePagoNombre:
+              comprobante.originalname,
+          },
+        );
 
         ventaCreada = true;
       }
 
       if (lead.tipoCompra === TipoCompra.CURSO) {
-        if (!lead.cursoId) {
+        if (!lead.cursoId)
           throw new BadRequestException(
             'El lead de curso no tiene cursoId',
           );
-        }
 
-        await this.prisma.$transaction(async (tx) => {
-          const venta = await this.ventasCursoService.registrarDesdeLead(
-            lead.id,
-            {
-              medioPago: datosPago.medioPago!,
-              moneda: datosPago.moneda,
-              referenciaPago: datosPago.referenciaPago,
-              observaciones: datosPago.observaciones,
-              comprobantePagoUrl: imagen.url,
-              comprobantePagoPublicId: imagen.publicId,
-              comprobantePagoNombre: comprobante.originalname,
-            },
-            tx,
-          );
-
-          for (const detalle of venta.detalles) {
-            if (!detalle.moduloId) continue;
-
-            const existente = await tx.inscripcion.findUnique({
-              where: {
-                moduloId_estudianteId: {
-                  moduloId: detalle.moduloId,
-                  estudianteId: lead.usuarioId,
+        await this.prisma.$transaction(
+          async (tx) => {
+            const venta =
+              await this.ventasCursoService.registrarDesdeLead(
+                lead.id,
+                {
+                  medioPago:
+                    datosPago.medioPago!,
+                  moneda:
+                    datosPago.moneda,
+                  referenciaPago:
+                    datosPago.referenciaPago,
+                  observaciones:
+                    datosPago.observaciones,
+                  montoCobrado:
+                    datosPago.montoCobrado!,
+                  comprobantePagoUrl:
+                    imagen.url,
+                  comprobantePagoPublicId:
+                    imagen.publicId,
+                  comprobantePagoNombre:
+                    comprobante.originalname,
                 },
-              },
-              select: { id: true },
-            });
+                tx,
+              );
 
-            if (existente) {
-              await tx.inscripcion.update({
-                where: { id: existente.id },
+            for (const detalle of venta.detalles) {
+              if (!detalle.moduloId)
+                continue;
+
+              const existente =
+                await tx.inscripcion.findUnique({
+                  where: {
+                    moduloId_estudianteId: {
+                      moduloId:
+                        detalle.moduloId,
+                      estudianteId:
+                        lead.usuarioId,
+                    },
+                  },
+                  select: { id: true },
+                });
+
+              if (existente) {
+                await tx.inscripcion.update({
+                  where: {
+                    id: existente.id,
+                  },
+                  data: {
+                    estado: 'activa',
+                    estadoAcceso:
+                      'habilitado',
+                  },
+                });
+
+                continue;
+              }
+
+              await tx.inscripcion.create({
                 data: {
+                  estudianteId:
+                    lead.usuarioId,
+                  moduloId:
+                    detalle.moduloId,
+                  numeroInscripcion:
+                    this.generarNumeroInscripcion(),
                   estado: 'activa',
-                  estadoAcceso: 'habilitado',
+                  estadoAcceso:
+                    'habilitado',
+                  monto:
+                    detalle.precioModulo,
+                  ventaCursoId:
+                    venta.id,
                 },
               });
-
-              continue;
             }
-
-            await tx.inscripcion.create({
-              data: {
-                estudianteId: lead.usuarioId,
-                moduloId: detalle.moduloId,
-                numeroInscripcion: this.generarNumeroInscripcion(),
-                estado: 'activa',
-                estadoAcceso: 'habilitado',
-                monto: detalle.precioModulo,
-                ventaCursoId: venta.id,
-              },
-            });
-          }
-        });
+          },
+        );
 
         ventaCreada = true;
       }
 
-      return await this.prisma.lead.update({
+      return this.prisma.lead.update({
         where: { id },
         data: {
-          estado: EstadoLead.PAGO_COMPLETADO,
+          estado:
+            EstadoLead.PAGO_COMPLETADO,
           convertidoEn: null,
         },
         select: {
@@ -714,8 +1026,12 @@ export class LeadService {
           estado: true,
           convertidoEn: true,
           actualizadoEn: true,
-          ventaModulo: { select: { id: true } },
-          ventaCurso: { select: { id: true } },
+          ventaModulo: {
+            select: { id: true },
+          },
+          ventaCurso: {
+            select: { id: true },
+          },
         },
       });
     } catch (error) {
@@ -729,55 +1045,88 @@ export class LeadService {
     }
   }
 
-  async obtenerEstadoCompraCurso(usuarioId: string, cursoId: string) {
-    const curso = await this.prisma.curso.findUnique({
-      where: { id: cursoId },
-      select: {
-        id: true,
-        modulos: {
-          where: { estaPublicado: true },
-          select: { id: true },
+  async obtenerEstadoCompraCurso(
+    usuarioId: string,
+    cursoId: string,
+  ) {
+    const curso =
+      await this.prisma.curso.findUnique({
+        where: { id: cursoId },
+        select: {
+          id: true,
+          modulos: {
+            where: {
+              estaPublicado: true,
+            },
+            select: { id: true },
+          },
         },
-      },
-    });
+      });
 
-    if (!curso) {
-      throw new NotFoundException('Curso no encontrado');
-    }
+    if (!curso)
+      throw new NotFoundException(
+        'Curso no encontrado',
+      );
 
-    const moduloIds = curso.modulos.map((modulo) => modulo.id);
+    const moduloIds =
+      curso.modulos.map(
+        ({ id }) => id,
+      );
 
-    const [ventaCurso, modulosConAcceso] = await Promise.all([
+    const [
+      ventaCurso,
+      modulosConAcceso,
+    ] = await Promise.all([
       this.prisma.ventaCurso.findUnique({
-        where: { usuarioId_cursoId: { usuarioId, cursoId } },
-        select: { id: true, creadoEn: true },
+        where: {
+          usuarioId_cursoId: {
+            usuarioId,
+            cursoId,
+          },
+        },
+        select: {
+          id: true,
+          creadoEn: true,
+        },
       }),
       moduloIds.length
         ? this.prisma.inscripcion.count({
           where: {
-            estudianteId: usuarioId,
-            moduloId: { in: moduloIds },
+            estudianteId:
+              usuarioId,
+            moduloId: {
+              in: moduloIds,
+            },
             estado: 'activa',
-            estadoAcceso: 'habilitado',
+            estadoAcceso:
+              'habilitado',
           },
         })
         : Promise.resolve(0),
     ]);
 
     const tieneTodosLosModulos =
-      moduloIds.length > 0 && modulosConAcceso === moduloIds.length;
+      moduloIds.length > 0 &&
+      modulosConAcceso ===
+      moduloIds.length;
 
-    const compradoComoCurso = Boolean(ventaCurso);
+    const compradoComoCurso =
+      Boolean(ventaCurso);
 
     return {
       cursoId,
       compradoComoCurso,
-      ventaCursoId: ventaCurso?.id ?? null,
-      compradoEn: ventaCurso?.creadoEn ?? null,
-      modulosPublicados: moduloIds.length,
+      ventaCursoId:
+        ventaCurso?.id ?? null,
+      compradoEn:
+        ventaCurso?.creadoEn ?? null,
+      modulosPublicados:
+        moduloIds.length,
       modulosConAcceso,
       tieneTodosLosModulos,
-      puedeComprarCurso: !compradoComoCurso && !tieneTodosLosModulos,
+      puedeComprarCurso:
+        !compradoComoCurso &&
+        !tieneTodosLosModulos,
     };
   }
 }

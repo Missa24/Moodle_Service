@@ -78,6 +78,7 @@ type VentaCursoConRelaciones = Prisma.VentaCursoGetPayload<{
 type RegistrarVentaCursoDesdeLeadInput = {
     medioPago: MedioPago;
     moneda?: string;
+    montoCobrado: number;
     referenciaPago?: string;
     observaciones?: string;
     comprobantePagoUrl?: string;
@@ -314,15 +315,13 @@ export class VentasCursoService {
             montoDescuento.toFixed(2),
         );
 
-        let montoCobrado = precioBase.minus(montoDescuento);
+        const montoCobrado = Number(data.montoCobrado);
 
-        if (montoCobrado.lessThan(0)) {
-            montoCobrado = new Prisma.Decimal(0);
+        if (!Number.isFinite(montoCobrado) || montoCobrado <= 0) {
+            throw new BadRequestException(
+                'El monto cobrado debe ser un valor mayor a 0',
+            );
         }
-
-        montoCobrado = new Prisma.Decimal(
-            montoCobrado.toFixed(2),
-        );
 
         const moneda = (
             data.moneda ??

@@ -85,4 +85,41 @@ export class NotificacionesService {
       },
     });
   }
+  async notificarLeadRegistrado(data: {
+    leadId: string;
+    cursoNombre?: string;
+    usuarioNombre?: string;
+  }) {
+    const admins = await this.prisma.usuarioRol.findMany({
+      where: {
+        rol: {
+          nombre: 'ADMIN',
+        },
+      },
+      select: {
+        usuarioId: true,
+      },
+    });
+
+    return Promise.all(
+      admins.map((admin) =>
+        this.crear({
+          usuarioId: admin.usuarioId,
+          tipo: 'LEAD_REGISTRADO',
+          titulo: 'Nuevo lead registrado',
+          contenido: data.usuarioNombre
+            ? `${data.usuarioNombre} ha registrado un nuevo lead${data.cursoNombre
+              ? ` para el curso ${data.cursoNombre}`
+              : ''
+            }.`
+            : `Se ha registrado un nuevo lead${data.cursoNombre
+              ? ` para el curso ${data.cursoNombre}`
+              : ''
+            }.`,
+          urlAccion: `/panel/leads/${data.leadId}`,
+        }),
+      ),
+    );
+  }
+
 }

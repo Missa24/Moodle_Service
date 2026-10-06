@@ -48,6 +48,7 @@ type VentaConRelaciones = Prisma.VentaModuloGetPayload<{
 type RegistrarVentaDesdeLeadInput = {
   medioPago: MedioPago;
   moneda?: string;
+  montoCobrado: number;
   referenciaPago?: string;
   observaciones?: string;
   inscripcionId?: string;
@@ -178,9 +179,13 @@ export class VentasService {
 
     montoDescuento = this.redondear(montoDescuento);
 
-    const montoCobrado = this.redondear(
-      Math.max(precioBase - montoDescuento, 0),
-    );
+    const montoCobrado = this.redondear(data.montoCobrado);
+
+    if (!Number.isFinite(montoCobrado) || montoCobrado <= 0) {
+      throw new BadRequestException(
+        'El monto cobrado debe ser un valor mayor a 0',
+      );
+    }
 
     const moneda = (
       data.moneda ??

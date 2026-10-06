@@ -1,8 +1,11 @@
+import { Type } from 'class-transformer';
 import {
     IsEnum,
+    IsNumber,
     IsOptional,
     IsString,
     Matches,
+    Min,
     ValidateIf,
 } from 'class-validator';
 
@@ -21,6 +24,15 @@ export class UpdateEstadoLeadDto {
     )
     @IsEnum(MedioPago)
     medioPago?: MedioPago;
+
+    @ValidateIf(
+        (dto: UpdateEstadoLeadDto) =>
+            dto.estado === EstadoLead.PAGO_COMPLETADO,
+    )
+    @Type(() => Number)
+    @IsNumber({ maxDecimalPlaces: 2 })
+    @Min(0.01)
+    montoCobrado?: number;
 
     @IsOptional()
     @IsString()
